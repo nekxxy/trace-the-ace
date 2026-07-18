@@ -13,7 +13,13 @@ import pyarrow.parquet as pq
 
 from trace_ace.config import ModelConfig, SEMANTIC_PROTOCOLS
 from trace_ace.ensemble import blend_probabilities
-from trace_ace.provenance import response_identity_sha256
+from trace_ace.provenance import (
+    VALIDATION_PIPELINE_SOURCE_FILES,
+    file_sha256,
+    response_identity_sha256,
+    trace_ace_source_sha256,
+    validate_store_manifest_source,
+)
 from trace_ace.semantic_store import load_semantic_arrays
 from trace_ace.semantic_training import train_semantic_cv
 from trace_ace.sparse_store import load_dense_by_row
@@ -60,8 +66,12 @@ def main() -> int:
     semantic_arrays = load_semantic_arrays(args.semantic_store)
     targets, _ = load_dense_by_row(args.sparse_store)
     response_digest = response_identity_sha256(responses)
-    sparse_manifest = json.loads((args.sparse_store / "manifest.json").read_text())
-    semantic_manifest = json.loads((args.semantic_store / "manifest.json").read_text())
+    sparse_manifest_path = args.sparse_store / "manifest.json"
+    semantic_manifest_path = args.semantic_store / "manifest.json"
+    sparse_manifest = json.loads(sparse_manifest_path.read_text())
+    semantic_manifest = json.loads(semantic_manifest_path.read_text())
+    validate_store_manifest_source(sparse_manifest, store="sparse")
+    validate_store_manifest_source(semantic_manifest, store="semantic")
     if {
         sparse_manifest["source"]["response_identity_sha256"],
         semantic_manifest["source"]["response_identity_sha256"],
@@ -73,11 +83,29 @@ def main() -> int:
     ):
         raise ValueError("responses and feature-store targets differ")
     config = ModelConfig(sparse_epochs=args.epochs)
+    if sparse_manifest["source"]["config"] != config.to_dict():
+        raise ValueError("sparse store configuration differs from robust validation")
+    if semantic_manifest["source"]["config"] != config.to_dict():
+        raise ValueError("semantic store configuration differs from robust validation")
+    response_view_hash = sparse_manifest["source"]["source_sha256"]
+    if semantic_manifest["source"]["source_sha256"] != response_view_hash:
+        raise ValueError("sparse and semantic stores derive from different response views")
+    sparse_manifest_hash = file_sha256(sparse_manifest_path)
+    semantic_manifest_hash = file_sha256(semantic_manifest_path)
+    validation_source_hash = trace_ace_source_sha256(
+        VALIDATION_PIPELINE_SOURCE_FILES
+    )
+    runner_source_hash = file_sha256(Path(__file__))
     available = {name: (families, seed) for name, families, seed in SEMANTIC_PROTOCOLS}
     selected = [args.protocol] if args.protocol else list(available)
     summary: dict[str, object] = {
         "config": config.to_dict(),
         "response_identity_sha256": response_digest,
+        "response_view_sha256": response_view_hash,
+        "sparse_store_manifest_sha256": sparse_manifest_hash,
+        "semantic_store_manifest_sha256": semantic_manifest_hash,
+        "validation_source_sha256": validation_source_hash,
+        "runner_source_sha256": runner_source_hash,
         "protocols": {},
     }
 
@@ -124,6 +152,13 @@ def main() -> int:
         if not np.isfinite(baseline).all():
             raise ValueError(f"{protocol_name}: fold baseline did not cover every row")
         metrics = {
+            "protocol": protocol_name,
+            "response_identity_sha256": response_digest,
+            "response_view_sha256": response_view_hash,
+            "sparse_store_manifest_sha256": sparse_manifest_hash,
+            "semantic_store_manifest_sha256": semantic_manifest_hash,
+            "validation_source_sha256": validation_source_hash,
+            "runner_source_sha256": runner_source_hash,
             "baseline": evaluate_probabilities(targets, baseline),
             "full": evaluate_probabilities(targets, sparse_result.full_oof),
             "role": evaluate_probabilities(targets, sparse_result.role_oof),
@@ -184,7 +219,7 @@ def main() -> int:
                 )
             ),
         }
-        summary["protocols"][protocol_name] = metrics
+        oof_path = protocol_dir / "oof.parquet"
         pd.DataFrame(
             {
                 "row_id": np.arange(len(targets), dtype=np.int64),
@@ -195,7 +230,9 @@ def main() -> int:
                 "semantic_probability": semantic_result.oof,
                 "ensemble_probability": ensemble,
             }
-        ).to_parquet(protocol_dir / "oof.parquet", index=False)
+        ).to_parquet(oof_path, index=False)
+        metrics["oof_sha256"] = file_sha256(oof_path)
+        summary["protocols"][protocol_name] = metrics
         (protocol_dir / "metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )

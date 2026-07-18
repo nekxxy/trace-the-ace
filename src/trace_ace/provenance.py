@@ -20,6 +20,38 @@ IDENTITY_COLUMNS = (
     "is_correct",
 )
 
+# These explicit allowlists make fitted checkpoints and validation reports fail
+# closed when code that determines model bytes or OOF probabilities changes.
+SPARSE_TRAINING_SOURCE_FILES = (
+    "config.py",
+    "feature_store.py",
+    "sparse.py",
+    "sparse_store.py",
+    "training.py",
+)
+SEMANTIC_TRAINING_SOURCE_FILES = (
+    "config.py",
+    "feature_store.py",
+    "semantic.py",
+    "semantic_store.py",
+    "semantic_training.py",
+)
+SPARSE_CV_SOURCE_FILES = tuple(
+    sorted({*SPARSE_TRAINING_SOURCE_FILES, "validation.py"})
+)
+SEMANTIC_CV_SOURCE_FILES = tuple(
+    sorted({*SEMANTIC_TRAINING_SOURCE_FILES, "validation.py"})
+)
+VALIDATION_PIPELINE_SOURCE_FILES = tuple(
+    sorted(
+        {
+            *SPARSE_CV_SOURCE_FILES,
+            *SEMANTIC_CV_SOURCE_FILES,
+            "ensemble.py",
+        }
+    )
+)
+
 
 def response_identity_sha256(frame: pd.DataFrame) -> str:
     """Hash stable response/fold identities without transcript or objective text."""
@@ -81,6 +113,52 @@ def selected_source_sha256(root: str | Path, filenames: Iterable[str]) -> str:
             raise FileNotFoundError(path)
         _update_fields(digest, (name, file_sha256(path)))
     return digest.hexdigest()
+
+
+def trace_ace_source_sha256(filenames: Iterable[str]) -> str:
+    """Hash selected ``trace_ace`` sources from the installed source tree."""
+
+    return selected_source_sha256(Path(__file__).resolve().parent, filenames)
+
+
+def validate_store_manifest_source(
+    manifest: object,
+    *,
+    store: str,
+) -> None:
+    """Require a feature-store manifest to match its current builder sources."""
+
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("source"), dict):
+        raise ValueError(f"{store} store manifest lacks source provenance")
+    source = manifest["source"]
+    package_root = Path(__file__).resolve().parent
+    from trace_ace.config import BGE_DIMENSION
+    from trace_ace.features import DENSE_FEATURE_NAMES
+
+    dense_columns = [f"dense__{name}" for name in DENSE_FEATURE_NAMES]
+    if store == "sparse":
+        expected_code = {
+            "builder_sha256": file_sha256(package_root / "sparse_store.py"),
+            "transform_sha256": file_sha256(package_root / "sparse.py"),
+        }
+        if source.get("code") != expected_code or source.get("dense_columns") != dense_columns:
+            raise ValueError("sparse store was built by different feature source code")
+        return
+    if store == "semantic":
+        expected_code = {
+            "builder_sha256": file_sha256(package_root / "semantic_store.py"),
+            "config_sha256": file_sha256(package_root / "config.py"),
+            "encoder_sha256": file_sha256(package_root / "semantic.py"),
+            "feature_store_sha256": file_sha256(package_root / "feature_store.py"),
+        }
+        if (
+            source.get("code") != expected_code
+            or source.get("dense_columns") != dense_columns
+            or source.get("embedding_dimension") != BGE_DIMENSION
+        ):
+            raise ValueError("semantic store was built by different feature source code")
+        return
+    raise ValueError(f"unsupported store provenance type: {store}")
 
 
 def install_directory_with_rollback(new_directory: str | Path, destination: str | Path) -> None:

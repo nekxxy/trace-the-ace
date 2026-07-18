@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import zipfile
 
 import joblib
@@ -17,6 +18,8 @@ from trace_ace.provenance import asset_tree_sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_CHECKOUT = PROJECT_ROOT / "vendor/tutoring-outcomes-runtime"
+RUNTIME_COMMIT = "ea9a81755e101b8036e386430c3a2f3d7c655f2e"
 RUNTIME_MODULES = (
     "__init__.py",
     "config.py",
@@ -28,6 +31,40 @@ RUNTIME_MODULES = (
     "sparse.py",
 )
 FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
+
+
+def _verify_runtime_checkout(
+    checkout: str | Path = RUNTIME_CHECKOUT,
+    *,
+    expected_commit: str = RUNTIME_COMMIT,
+) -> str:
+    """Require the configured official runtime checkout at a clean pinned HEAD."""
+
+    path = Path(checkout)
+    if not path.is_dir():
+        raise RuntimeError("official runtime checkout is missing")
+
+    def git(*arguments: str) -> str:
+        try:
+            result = subprocess.run(
+                ("git", *arguments),
+                cwd=path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise RuntimeError("official runtime checkout is not verifiable") from error
+        return result.stdout.strip()
+
+    if git("rev-parse", "--is-inside-work-tree") != "true":
+        raise RuntimeError("official runtime checkout is not a Git worktree")
+    head = git("rev-parse", "--verify", "HEAD^{commit}")
+    if head != expected_commit:
+        raise RuntimeError("official runtime checkout is not at the pinned commit")
+    if git("status", "--porcelain=v1", "--untracked-files=no"):
+        raise RuntimeError("official runtime checkout has tracked changes")
+    return head
 
 
 def _sha256(path: Path) -> str:
@@ -76,6 +113,7 @@ def main() -> int:
         default=PROJECT_ROOT / "submissions/builds/trace_ace_cleanroom_v02.zip",
     )
     args = parser.parse_args()
+    runtime_commit = _verify_runtime_checkout()
     if not args.artifact.is_file():
         raise FileNotFoundError(args.artifact)
     artifact = joblib.load(args.artifact)
@@ -123,7 +161,7 @@ def main() -> int:
         "bge_model_sha256": _sha256(asset_source / "model.safetensors"),
         "bge_asset_tree_sha256": asset_tree_hash,
         "external_training_data": [],
-        "runtime_commit": "ea9a81755e101b8036e386430c3a2f3d7c655f2e",
+        "runtime_commit": runtime_commit,
     }
     (args.staging / "submission_metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"

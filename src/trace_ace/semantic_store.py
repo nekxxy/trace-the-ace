@@ -107,8 +107,14 @@ def build_semantic_store(
         "config": asdict(cfg),
         "code": {
             "builder_sha256": file_sha256(Path(__file__)),
+            "config_sha256": file_sha256(Path(__file__).with_name("config.py")),
             "encoder_sha256": file_sha256(Path(__file__).with_name("semantic.py")),
+            "feature_store_sha256": file_sha256(
+                Path(__file__).with_name("feature_store.py")
+            ),
         },
+        "dense_columns": list(dense_columns()),
+        "embedding_dimension": BGE_DIMENSION,
         "device_independent_format": "normalized-float32",
         "build_device": device,
         "encode_batch_size": batch_size,

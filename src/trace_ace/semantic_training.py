@@ -15,6 +15,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from trace_ace.config import ModelConfig
+from trace_ace.provenance import (
+    SEMANTIC_TRAINING_SOURCE_FILES,
+    trace_ace_source_sha256,
+    validate_store_manifest_source,
+)
 from trace_ace.semantic import (
     METADATA_VERSION,
     SemanticLogisticModel,
@@ -120,6 +125,7 @@ def train_semantic_cv(
 ) -> SemanticCVResult:
     cfg = config or ModelConfig()
     store_manifest = load_semantic_manifest(store_dir)
+    validate_store_manifest_source(store_manifest, store="semantic")
     if store_manifest["source"]["config"] != cfg.to_dict():
         raise ValueError("semantic store configuration differs from training")
     arrays = load_semantic_arrays(store_dir)
@@ -130,7 +136,7 @@ def train_semantic_cv(
     if checkpoint_root:
         checkpoint_root.mkdir(parents=True, exist_ok=True)
     store_manifest_sha256 = _sha256_file(Path(store_dir) / "manifest.json")
-    trainer_source_sha256 = _sha256_file(Path(__file__))
+    trainer_source_sha256 = trace_ace_source_sha256(SEMANTIC_TRAINING_SOURCE_FILES)
     for fold in folds:
         train_mask_sha256 = _sha256_array(fold.train_mask)
         validation_mask_sha256 = _sha256_array(fold.validation_mask)
@@ -206,6 +212,7 @@ def train_final_semantic(
 ) -> SemanticLogisticModel:
     cfg = config or ModelConfig()
     store_manifest = load_semantic_manifest(store_dir)
+    validate_store_manifest_source(store_manifest, store="semantic")
     if store_manifest["source"]["config"] != cfg.to_dict():
         raise ValueError("semantic store configuration differs from training")
     arrays = load_semantic_arrays(store_dir)

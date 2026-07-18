@@ -7,9 +7,17 @@ import json
 from pathlib import Path
 import re
 import struct
+import subprocess
 import zipfile
 
-from scripts.build_submission import FIXED_ZIP_TIME, RUNTIME_MODULES, _write_zip
+import pytest
+
+from scripts.build_submission import (
+    FIXED_ZIP_TIME,
+    RUNTIME_MODULES,
+    _verify_runtime_checkout,
+    _write_zip,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +37,70 @@ HOST_ABSOLUTE_PATH = re.compile(
     r"(?:^|[\s='\"])/(?:code_execution|home|mnt|opt|root|tmp|workspace)(?:/|$)"
     r"|(?:^|[\s='\"])[A-Za-z]:\\"
 )
+
+
+def _git(root: Path, *arguments: str) -> str:
+    result = subprocess.run(
+        ("git", *arguments),
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _runtime_checkout_fixture(root: Path) -> tuple[Path, str]:
+    checkout = root / "runtime"
+    checkout.mkdir()
+    _git(checkout, "init", "--quiet")
+    (checkout / "runtime.txt").write_text("pinned\n", encoding="utf-8")
+    _git(checkout, "add", "runtime.txt")
+    _git(
+        checkout,
+        "-c",
+        "user.name=Trace Ace Tests",
+        "-c",
+        "user.email=tests@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "pinned runtime",
+    )
+    return checkout, _git(checkout, "rev-parse", "HEAD")
+
+
+def test_runtime_checkout_guard_accepts_only_exact_clean_tracked_state(
+    tmp_path: Path,
+) -> None:
+    checkout, commit = _runtime_checkout_fixture(tmp_path)
+    assert _verify_runtime_checkout(checkout, expected_commit=commit) == commit
+
+    (checkout / "untracked.txt").write_text("allowed\n", encoding="utf-8")
+    assert _verify_runtime_checkout(checkout, expected_commit=commit) == commit
+
+    (checkout / "runtime.txt").write_text("modified\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="tracked changes"):
+        _verify_runtime_checkout(checkout, expected_commit=commit)
+
+    _git(checkout, "restore", "runtime.txt")
+    (checkout / "runtime.txt").write_text("staged\n", encoding="utf-8")
+    _git(checkout, "add", "runtime.txt")
+    with pytest.raises(RuntimeError, match="tracked changes"):
+        _verify_runtime_checkout(checkout, expected_commit=commit)
+
+
+def test_runtime_checkout_guard_rejects_wrong_head_and_non_repository(
+    tmp_path: Path,
+) -> None:
+    checkout, commit = _runtime_checkout_fixture(tmp_path)
+    with pytest.raises(RuntimeError, match="pinned commit"):
+        _verify_runtime_checkout(checkout, expected_commit="0" * len(commit))
+
+    non_repository = tmp_path / "not-a-repository"
+    non_repository.mkdir()
+    with pytest.raises(RuntimeError, match="not verifiable"):
+        _verify_runtime_checkout(non_repository, expected_commit=commit)
 
 
 def _runtime_source_paths() -> list[Path]:

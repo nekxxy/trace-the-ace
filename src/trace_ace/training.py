@@ -15,6 +15,11 @@ from sklearn.preprocessing import StandardScaler
 
 from trace_ace.config import ModelConfig
 from trace_ace.feature_store import dense_columns
+from trace_ace.provenance import (
+    SPARSE_TRAINING_SOURCE_FILES,
+    trace_ace_source_sha256,
+    validate_store_manifest_source,
+)
 from trace_ace.sparse import (
     SparseArtifact,
     append_scaled_dense,
@@ -87,6 +92,7 @@ def train_sparse_cv(
 
     cfg = config or ModelConfig()
     store_manifest = validate_sparse_store(store_dir)
+    validate_store_manifest_source(store_manifest, store="sparse")
     if store_manifest["source"]["config"] != cfg.to_dict():
         raise ValueError("sparse store configuration differs from training")
     targets, dense = load_dense_by_row(store_dir)
@@ -99,7 +105,7 @@ def train_sparse_cv(
         checkpoint_root.mkdir(parents=True, exist_ok=True)
 
     store_manifest_sha256 = _sha256_file(Path(store_dir) / "manifest.json")
-    trainer_source_sha256 = _sha256_file(Path(__file__))
+    trainer_source_sha256 = trace_ace_source_sha256(SPARSE_TRAINING_SOURCE_FILES)
     for fold in folds:
         train_mask_sha256 = _sha256_array(fold.train_mask)
         validation_mask_sha256 = _sha256_array(fold.validation_mask)
@@ -212,6 +218,7 @@ def train_final_sparse(
 
     cfg = config or ModelConfig()
     store_manifest = validate_sparse_store(store_dir)
+    validate_store_manifest_source(store_manifest, store="sparse")
     if store_manifest["source"]["config"] != cfg.to_dict():
         raise ValueError("sparse store configuration differs from training")
     _, dense = load_dense_by_row(store_dir)

@@ -12,7 +12,12 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from trace_ace.config import ModelConfig
-from trace_ace.provenance import response_identity_sha256
+from trace_ace.provenance import (
+    SPARSE_CV_SOURCE_FILES,
+    file_sha256,
+    response_identity_sha256,
+    trace_ace_source_sha256,
+)
 from trace_ace.sparse_store import load_dense_by_row
 from trace_ace.training import train_sparse_cv
 from trace_ace.validation import evaluate_probabilities, objective_disjoint_folds
@@ -45,7 +50,8 @@ def main() -> int:
     responses = pq.read_table(args.responses).to_pandas().sort_values("row_id")
     if not np.array_equal(responses["row_id"].to_numpy(), np.arange(len(responses))):
         raise ValueError("responses row_id must be contiguous")
-    store_manifest = json.loads((args.store_dir / "manifest.json").read_text())
+    store_manifest_path = args.store_dir / "manifest.json"
+    store_manifest = json.loads(store_manifest_path.read_text())
     response_digest = response_identity_sha256(responses)
     if store_manifest["source"]["response_identity_sha256"] != response_digest:
         raise ValueError("responses and sparse store identities differ")
@@ -65,10 +71,17 @@ def main() -> int:
         "config": config.to_dict(),
         "protocol": "objective-disjoint SGKF with validation-session purge",
         "response_identity_sha256": response_digest,
+        "response_view_sha256": store_manifest["source"]["source_sha256"],
+        "store_manifest_sha256": file_sha256(store_manifest_path),
+        "training_source_sha256": trace_ace_source_sha256(
+            SPARSE_CV_SOURCE_FILES
+        ),
+        "runner_source_sha256": file_sha256(Path(__file__)),
         "full_oof": evaluate_probabilities(targets, result.full_oof),
         "role_oof": evaluate_probabilities(targets, result.role_oof),
         "folds": list(result.fold_metrics),
     }
+    oof_path = args.run_dir / "sparse_oof.parquet"
     pd.DataFrame(
         {
             "row_id": np.arange(len(targets), dtype=np.int64),
@@ -76,7 +89,8 @@ def main() -> int:
             "full_probability": result.full_oof,
             "role_probability": result.role_oof,
         }
-    ).to_parquet(args.run_dir / "sparse_oof.parquet", index=False)
+    ).to_parquet(oof_path, index=False)
+    metrics["oof_sha256"] = file_sha256(oof_path)
     (args.run_dir / "sparse_metrics.json").write_text(
         json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
