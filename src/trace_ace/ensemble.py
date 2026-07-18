@@ -33,6 +33,8 @@ from trace_ace.sparse import (
 
 
 ARTIFACT_FORMAT_VERSION = 1
+ROLE_DENSE_SCALER_GEOMETRY = "standardized-unit-expected-l2-v1"
+SEMANTIC_SCALER_GEOMETRY = "natural-semantic-unit-dense-l2-v1"
 RUNTIME_SOURCE_FILES = (
     "__init__.py",
     "config.py",
@@ -136,6 +138,12 @@ class FinalEnsembleArtifact:
         expected_semantic = 4 * BGE_DIMENSION + 1 + len(DENSE_FEATURE_NAMES)
         if getattr(self.semantic, "n_features_in_", None) != expected_semantic:
             raise RuntimeError("semantic model feature dimension is invalid")
+        _validate_scaler_geometry(
+            role_scaler=self.sparse.role_dense_scaler,
+            semantic_scaler=getattr(self.semantic, "scaler_", None),
+            semantic_feature_count=4 * BGE_DIMENSION + 1,
+            dense_block_width=len(DENSE_FEATURE_NAMES),
+        )
         if self.semantic.metadata_.logistic_c != config.semantic_c:
             raise RuntimeError("semantic regularization differs from model configuration")
         if self.semantic.metadata_.random_seed != config.seed:
@@ -150,6 +158,65 @@ class FinalEnsembleArtifact:
         if feature_config.context_char_budget != config.context_char_budget:
             raise RuntimeError("feature and model context budgets differ")
         return config
+
+
+def _validate_scaler_geometry(
+    *,
+    role_scaler: object,
+    semantic_scaler: object,
+    semantic_feature_count: int,
+    dense_block_width: int,
+) -> None:
+    """Reject fitted artifacts that predate or violate the locked geometry."""
+
+    if (
+        getattr(role_scaler, "trace_ace_geometry_", None)
+        != ROLE_DENSE_SCALER_GEOMETRY
+        or getattr(role_scaler, "trace_ace_block_width_", None)
+        != dense_block_width
+        or getattr(role_scaler, "n_features_in_", None) != dense_block_width
+    ):
+        raise RuntimeError("role dense scaler geometry is invalid")
+    role_mean = np.asarray(getattr(role_scaler, "mean_", []))
+    role_scale = np.asarray(getattr(role_scaler, "scale_", []))
+    if (
+        role_mean.shape != (dense_block_width,)
+        or role_scale.shape != (dense_block_width,)
+        or not np.isfinite(role_mean).all()
+        or not np.isfinite(role_scale).all()
+        or np.any(role_scale <= 0)
+    ):
+        raise RuntimeError("role dense scaler parameters are invalid")
+    expected_semantic_total = semantic_feature_count + dense_block_width
+    if (
+        getattr(semantic_scaler, "trace_ace_geometry_", None)
+        != SEMANTIC_SCALER_GEOMETRY
+        or getattr(semantic_scaler, "trace_ace_semantic_feature_count_", None)
+        != semantic_feature_count
+        or getattr(semantic_scaler, "trace_ace_dense_block_width_", None)
+        != dense_block_width
+        or getattr(semantic_scaler, "n_features_in_", None)
+        != expected_semantic_total
+    ):
+        raise RuntimeError("semantic scaler geometry is invalid")
+    semantic_mean = np.asarray(getattr(semantic_scaler, "mean_", []))
+    semantic_scale = np.asarray(getattr(semantic_scaler, "scale_", []))
+    if (
+        semantic_mean.shape != (expected_semantic_total,)
+        or semantic_scale.shape != (expected_semantic_total,)
+        or not np.isfinite(semantic_mean).all()
+        or not np.isfinite(semantic_scale).all()
+        or np.any(semantic_scale <= 0)
+        or not np.array_equal(
+            semantic_mean[:semantic_feature_count],
+            np.zeros(semantic_feature_count),
+        )
+        or not np.array_equal(
+            semantic_scale[:semantic_feature_count],
+            np.ones(semantic_feature_count),
+        )
+    ):
+        raise RuntimeError("semantic scaler parameters violate locked geometry")
 
 
 def sha256_file(path: str | Path) -> str:
