@@ -11,7 +11,16 @@ The task is to predict the probability that a student answers an aligned follow-
 - The official runtime is pinned locally at commit `ea9a81755e101b8036e386430c3a2f3d7c655f2e`.
 - Python serialization dependencies now match the official runtime, including scikit-learn 1.8.0 and NumPy 2.2.6.
 - Memory-bounded caches, leakage-safe folds, sparse models, offline BGE semantic features, ensemble inference, tests, and deterministic packaging are implemented.
-- Model training and validation are in progress; no new Normal platform submission has been made.
+- Primary objective-disjoint CV and all four required semantic-family robustness
+  protocols pass the fixed-ensemble promotion gate.
+- The final model is `models/final_ensemble_cleanroom_v02.joblib` (SHA-256
+  `87ad03d488242fe5bfe91905251a73bc7010694f9be20abd0a43fa2bc6876738`).
+- The byte-reproducible package is
+  `submissions/builds/trace_ace_cleanroom_v02.zip` (SHA-256
+  `ff9578e9f3494018df996cd7fa3d4a60efd1d7ff0e32b0c385f297fc371651e0`).
+- Extracted-package and pinned official-container checks pass. Platform
+  authentication is unavailable on this host, so an exact-hash platform Smoke
+  job is the only remaining gate; no new Normal submission has been made.
 
 ## Project layout
 
@@ -82,6 +91,7 @@ python scripts/build_semantic_store.py
 python scripts/run_sparse_cv.py
 python scripts/run_semantic_cv.py
 python scripts/evaluate_ensemble.py
+python scripts/run_robust_cv.py
 python scripts/train_final.py
 python scripts/build_submission.py
 ```
@@ -105,7 +115,10 @@ to consume the remaining Normal-submission quota.
 | Session transcripts | `session_id`, `utterance_id`, `role`, `content`, `timestamp` |
 | Submission format | `response_id`, `probability` |
 
-The eventual training pipeline must split by `session_id`, fit preprocessing only on training folds, and save every fitted component under `models/`. Prediction code must load those saved artifacts and process unseen test samples without retraining.
+The training pipeline purges validation sessions, fits preprocessing only on
+training folds, and saves every fitted component under `models/`. Prediction
+code loads those saved artifacts and processes unseen test samples without
+retraining.
 
 ## Data and runtime safeguards
 
