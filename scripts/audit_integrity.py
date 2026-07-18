@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import asdict
 import hashlib
+from importlib.metadata import version as package_version
 import json
 from pathlib import Path, PurePosixPath
 import sys
@@ -963,6 +964,18 @@ def _expected_model_rows(view_path: Path) -> tuple[np.ndarray, np.ndarray, np.nd
     return row_ids, targets, dense, response_identity_sha256(identity)
 
 
+def _declared_hashes_sha256(
+    records: Iterable[Sequence[object]], *, domain: bytes
+) -> str:
+    digest = hashlib.sha256(domain)
+    for record in records:
+        for value in record:
+            encoded = str(value).encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+    return digest.hexdigest()
+
+
 def _audit_sparse_store(root: Path) -> dict[str, object]:
     store = root / "data" / "processed" / "sparse_store"
     if not store.exists():
@@ -980,12 +993,13 @@ def _audit_sparse_store(root: Path) -> dict[str, object]:
     source = _safe_dict(manifest.get("source"))
     code = _safe_dict(source.get("code"))
     source_sha = file_sha256(view_path)
+    batch_size = _safe_int(source.get("batch_size"), 0)
     source_fingerprint_matches = bool(
         source.get("source_sha256") == source_sha
         and source.get("response_identity_sha256") == identity_sha
         and source.get("config") == ModelConfig().to_dict()
         and source.get("dense_columns") == list(dense_columns())
-        and _safe_int(source.get("batch_size"), 0) > 0
+        and batch_size > 0
     )
     expected_builder = file_sha256(root / "src" / "trace_ace" / "sparse_store.py")
     expected_transform = file_sha256(root / "src" / "trace_ace" / "sparse.py")
@@ -994,25 +1008,138 @@ def _audit_sparse_store(root: Path) -> dict[str, object]:
         and code.get("transform_sha256") == expected_transform
     )
 
+    records = manifest.get("parts")
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        return {
+            "present": True,
+            "optional": True,
+            "hash_validation_passed": True,
+            "manifest_schema_matches": False,
+            "passed": False,
+        }
+    safe_names: set[str] = {"manifest.json"}
+    declared_hash_records: list[tuple[object, object, object]] = []
+    file_layout_matches = True
+    for index, raw_record in enumerate(records):
+        record = _safe_dict(raw_record)
+        expected_names = {
+            "full": f"part_{index:05d}.full.npz",
+            "role": f"part_{index:05d}.role.npz",
+            "arrays": f"part_{index:05d}.arrays.npz",
+        }
+        for kind, expected_name in expected_names.items():
+            file_layout_matches &= record.get(kind) == expected_name
+            safe_names.add(expected_name)
+            declared_hash_records.append(
+                (index, kind, record.get(f"{kind}_sha256", ""))
+            )
+    actual_entries = {path.name for path in store.iterdir()}
+    directory_layout_matches = actual_entries == safe_names
+    declared_hash_digest = _declared_hashes_sha256(
+        declared_hash_records, domain=b"trace-ace-sparse-declared-files-v1\0"
+    )
+    if not file_layout_matches:
+        return {
+            "present": True,
+            "optional": True,
+            "manifest_sha256": file_sha256(store / "manifest.json"),
+            "hash_validation_passed": True,
+            "declared_file_count": len(declared_hash_records),
+            "declared_file_hashes_sha256": declared_hash_digest,
+            "file_layout_matches": False,
+            "directory_layout_matches": directory_layout_matches,
+            "passed": False,
+        }
+
+    cfg = ModelConfig()
+    expected_full_columns = cfg.full_hash_features + cfg.objective_hash_features
+    expected_role_columns = 2 * cfg.role_hash_features + cfg.objective_hash_features
     sparse_values_finite = True
+    sparse_dtypes_match = True
+    sparse_structure_valid = True
+    stored_array_schema_matches = True
+    stored_part_metadata_matches = True
+    matrix_dimensions_match = True
     part_row_count = 0
     part_count = 0
-    for part in iter_sparse_parts(store):
+    stored_schema_records: list[tuple[object, object, object, object]] = []
+    for part, raw_record in zip(iter_sparse_parts(store), records, strict=True):
+        record = _safe_dict(raw_record)
         part_count += 1
-        part_row_count += len(part.row_ids)
+        rows = len(part.row_ids)
+        part_row_count += rows
         sparse_values_finite &= bool(
             np.isfinite(part.full.data).all()
             and np.isfinite(part.role.data).all()
             and np.isfinite(part.dense).all()
         )
+        sparse_dtypes_match &= bool(
+            part.full.dtype == np.dtype(np.float32)
+            and part.role.dtype == np.dtype(np.float32)
+            and part.full.indices.dtype == np.dtype(np.int32)
+            and part.role.indices.dtype == np.dtype(np.int32)
+            and part.full.indptr.dtype == np.dtype(np.int32)
+            and part.role.indptr.dtype == np.dtype(np.int32)
+        )
+        sparse_structure_valid &= bool(
+            part.full.has_canonical_format
+            and part.role.has_canonical_format
+            and part.full.has_sorted_indices
+            and part.role.has_sorted_indices
+        )
+        matrix_dimensions_match &= bool(
+            part.full.shape == (rows, expected_full_columns)
+            and part.role.shape == (rows, expected_role_columns)
+            and part.dense.shape == (rows, len(dense_columns()))
+        )
+        stored_part_metadata_matches &= bool(
+            _safe_int(record.get("index")) == part.index
+            and _safe_int(record.get("rows")) == rows
+            and _safe_int(record.get("row_id_min")) == int(part.row_ids.min())
+            and _safe_int(record.get("row_id_max")) == int(part.row_ids.max())
+            and record.get("full_shape") == list(part.full.shape)
+            and record.get("role_shape") == list(part.role.shape)
+            and record.get("dense_shape") == list(part.dense.shape)
+        )
+        with np.load(store / f"part_{part.index:05d}.arrays.npz", allow_pickle=False) as arrays:
+            keys_match = set(arrays.files) == {"row_ids", "targets", "dense"}
+            if keys_match:
+                raw_row_ids = arrays["row_ids"]
+                raw_targets = arrays["targets"]
+                raw_dense = arrays["dense"]
+                schema_matches = bool(
+                    raw_row_ids.dtype == np.dtype(np.int64)
+                    and raw_targets.dtype == np.dtype(np.int8)
+                    and raw_dense.dtype == np.dtype(np.float32)
+                    and raw_row_ids.shape == (rows,)
+                    and raw_targets.shape == (rows,)
+                    and raw_dense.shape == (rows, len(dense_columns()))
+                )
+                stored_schema_records.extend(
+                    (
+                        (part.index, "row_ids", raw_row_ids.dtype.str, raw_row_ids.shape),
+                        (part.index, "targets", raw_targets.dtype.str, raw_targets.shape),
+                        (part.index, "dense", raw_dense.dtype.str, raw_dense.shape),
+                    )
+                )
+            else:
+                schema_matches = False
+            stored_array_schema_matches &= keys_match and schema_matches
+
+    stored_schema_digest = _declared_hashes_sha256(
+        stored_schema_records, domain=b"trace-ace-sparse-array-schema-v1\0"
+    )
     targets_match = np.array_equal(loaded_targets, expected_targets)
     dense_match = np.array_equal(loaded_dense, expected_dense)
     dense_finite = bool(np.isfinite(loaded_dense).all())
     response_count = _safe_int(manifest.get("response_count"))
     manifest_part_count = _safe_int(manifest.get("part_count"))
+    expected_part_count = (
+        (response_count + batch_size - 1) // batch_size if batch_size > 0 else -1
+    )
     coverage_matches = bool(
         response_count == len(expected_targets) == len(loaded_targets) == part_row_count
-        and manifest_part_count == part_count
+        and manifest_part_count == part_count == len(records) == expected_part_count
     )
     return {
         "present": True,
@@ -1020,6 +1147,10 @@ def _audit_sparse_store(root: Path) -> dict[str, object]:
         "manifest_sha256": file_sha256(store / "manifest.json"),
         "version_matches": manifest.get("version") == SPARSE_STORE_VERSION,
         "hash_validation_passed": True,
+        "declared_file_count": len(declared_hash_records),
+        "declared_file_hashes_sha256": declared_hash_digest,
+        "file_layout_matches": file_layout_matches,
+        "directory_layout_matches": directory_layout_matches,
         "source_sha256": source_sha,
         "source_identity_sha256": identity_sha,
         "source_fingerprint_matches": source_fingerprint_matches,
@@ -1029,6 +1160,12 @@ def _audit_sparse_store(root: Path) -> dict[str, object]:
         "response_count": response_count,
         "part_count": part_count,
         "coverage_matches": coverage_matches,
+        "part_metadata_matches": stored_part_metadata_matches,
+        "matrix_dimensions_match": matrix_dimensions_match,
+        "stored_array_schema_sha256": stored_schema_digest,
+        "stored_array_schemas_match": stored_array_schema_matches,
+        "sparse_dtypes_match": sparse_dtypes_match,
+        "sparse_structure_valid": sparse_structure_valid,
         "targets_match": targets_match,
         "dense_matches": dense_match,
         "dense_all_finite": dense_finite,
@@ -1037,7 +1174,14 @@ def _audit_sparse_store(root: Path) -> dict[str, object]:
             manifest.get("version") == SPARSE_STORE_VERSION
             and source_fingerprint_matches
             and code_fingerprints_match
+            and file_layout_matches
+            and directory_layout_matches
             and coverage_matches
+            and stored_part_metadata_matches
+            and matrix_dimensions_match
+            and stored_array_schema_matches
+            and sparse_dtypes_match
+            and sparse_structure_valid
             and targets_match
             and dense_match
             and dense_finite
@@ -1051,6 +1195,17 @@ def _array_all_finite(values: np.ndarray, *, batch_size: int = 4096) -> bool:
         np.isfinite(values[start : start + batch_size]).all()
         for start in range(0, len(values), batch_size)
     )
+
+
+def _array_rows_normalized(values: np.ndarray, *, batch_size: int = 4096) -> bool:
+    for start in range(0, len(values), batch_size):
+        batch = np.asarray(values[start : start + batch_size], dtype=np.float32)
+        norms = np.linalg.norm(batch, axis=1)
+        if not np.isfinite(norms).all() or not np.allclose(
+            norms, 1.0, rtol=1e-5, atol=1e-5
+        ):
+            return False
+    return True
 
 
 def _audit_semantic_store(root: Path) -> dict[str, object]:
@@ -1073,19 +1228,39 @@ def _audit_semantic_store(root: Path) -> dict[str, object]:
     asset = root / "assets" / "bge-small-en-v1.5"
     asset_hash = asset_tree_sha256(asset)
     model_hash = file_sha256(asset / "model.safetensors")
+    expected_libraries = {
+        name: package_version(name)
+        for name in ("sentence-transformers", "transformers", "torch")
+    }
+    build_device = source.get("build_device")
+    encode_batch_size = _safe_int(source.get("encode_batch_size"), 0)
+    build_metadata_valid = bool(
+        isinstance(build_device, str) and build_device.strip() and encode_batch_size > 0
+    )
+    expected_builder = file_sha256(root / "src" / "trace_ace" / "semantic_store.py")
+    expected_config = file_sha256(root / "src" / "trace_ace" / "config.py")
+    expected_encoder = file_sha256(root / "src" / "trace_ace" / "semantic.py")
+    expected_feature_store = file_sha256(
+        root / "src" / "trace_ace" / "feature_store.py"
+    )
+    code_fingerprints_match = bool(
+        code.get("builder_sha256") == expected_builder
+        and code.get("config_sha256") == expected_config
+        and code.get("encoder_sha256") == expected_encoder
+        and code.get("feature_store_sha256") == expected_feature_store
+    )
+    libraries_match = source.get("libraries") == expected_libraries
     source_fingerprint_matches = bool(
         source.get("source_sha256") == source_sha
         and source.get("response_identity_sha256") == identity_sha
         and source.get("model_sha256") == model_hash
         and source.get("asset_tree_sha256") == asset_hash
         and source.get("config") == ModelConfig().to_dict()
+        and source.get("dense_columns") == list(dense_columns())
+        and _safe_int(source.get("embedding_dimension")) == BGE_DIMENSION
         and source.get("device_independent_format") == "normalized-float32"
-    )
-    expected_builder = file_sha256(root / "src" / "trace_ace" / "semantic_store.py")
-    expected_encoder = file_sha256(root / "src" / "trace_ace" / "semantic.py")
-    code_fingerprints_match = bool(
-        code.get("builder_sha256") == expected_builder
-        and code.get("encoder_sha256") == expected_encoder
+        and build_metadata_valid
+        and libraries_match
     )
     row_count = _safe_int(manifest.get("response_count"))
     objective_count = _safe_int(manifest.get("objective_count"))
@@ -1137,24 +1312,120 @@ def _audit_semantic_store(root: Path) -> dict[str, object]:
     context_finite = _array_all_finite(arrays.context_embeddings)
     objective_finite = _array_all_finite(arrays.objective_embeddings)
     dense_finite = bool(np.isfinite(arrays.dense).all())
+    contexts_normalized = _array_rows_normalized(arrays.context_embeddings)
+    objectives_normalized = _array_rows_normalized(arrays.objective_embeddings)
+
+    expected_output_names = {
+        "context_embeddings.npy",
+        "objective_embeddings.npy",
+        "objective_ids.npy",
+        "arrays.npz",
+    }
+    outputs = _safe_dict(manifest.get("outputs"))
+    output_layout_matches = set(outputs) == expected_output_names
+    directory_layout_matches = {
+        path.name for path in store.iterdir()
+    } == expected_output_names | {"manifest.json"}
+    declared_output_hash_records: list[tuple[object, object, object]] = []
+    output_records_match = output_layout_matches
+    for name in sorted(expected_output_names):
+        record = _safe_dict(outputs.get(name))
+        path = store / name
+        declared_output_hash_records.append(
+            (name, record.get("sha256", ""), record.get("bytes", -1))
+        )
+        output_records_match &= bool(
+            path.is_file()
+            and record.get("sha256") == file_sha256(path)
+            and _safe_int(record.get("bytes")) == path.stat().st_size
+        )
+    declared_output_hash_digest = _declared_hashes_sha256(
+        declared_output_hash_records,
+        domain=b"trace-ace-semantic-declared-files-v1\0",
+    )
+
+    raw_contexts = np.load(
+        store / "context_embeddings.npy", mmap_mode="r", allow_pickle=False
+    )
+    raw_objectives = np.load(
+        store / "objective_embeddings.npy", mmap_mode="r", allow_pickle=False
+    )
+    raw_objective_ids = np.load(store / "objective_ids.npy", allow_pickle=False)
+    with np.load(store / "arrays.npz", allow_pickle=False) as raw_arrays:
+        npz_keys_match = set(raw_arrays.files) == {
+            "objective_index_by_row",
+            "targets",
+            "dense",
+        }
+        if npz_keys_match:
+            raw_indices = raw_arrays["objective_index_by_row"]
+            raw_targets = raw_arrays["targets"]
+            raw_dense = raw_arrays["dense"]
+            npz_schema_matches = bool(
+                raw_indices.dtype == np.dtype(np.int32)
+                and raw_targets.dtype == np.dtype(np.int8)
+                and raw_dense.dtype == np.dtype(np.float32)
+                and raw_indices.shape == (row_count,)
+                and raw_targets.shape == (row_count,)
+                and raw_dense.shape == expected_dense.shape
+            )
+            npz_schema_records = (
+                ("objective_index_by_row", raw_indices.dtype.str, raw_indices.shape),
+                ("targets", raw_targets.dtype.str, raw_targets.shape),
+                ("dense", raw_dense.dtype.str, raw_dense.shape),
+            )
+        else:
+            npz_schema_matches = False
+            npz_schema_records = ()
+    standalone_schema_matches = bool(
+        raw_contexts.dtype == np.dtype(np.float32)
+        and raw_objectives.dtype == np.dtype(np.float32)
+        and raw_objective_ids.dtype.kind == "U"
+        and raw_contexts.shape == (row_count, dimension)
+        and raw_objectives.shape == (objective_count, dimension)
+        and raw_objective_ids.shape == (objective_count,)
+    )
+    stored_array_schema_digest = _declared_hashes_sha256(
+        (
+            ("context_embeddings", raw_contexts.dtype.str, raw_contexts.shape),
+            ("objective_embeddings", raw_objectives.dtype.str, raw_objectives.shape),
+            ("objective_ids", raw_objective_ids.dtype.str, raw_objective_ids.shape),
+            *npz_schema_records,
+        ),
+        domain=b"trace-ace-semantic-array-schema-v1\0",
+    )
+    stored_array_schemas_match = bool(
+        npz_keys_match and npz_schema_matches and standalone_schema_matches
+    )
     return {
         "present": True,
         "optional": True,
         "manifest_sha256": file_sha256(store / "manifest.json"),
         "version_matches": manifest.get("version") == SEMANTIC_STORE_VERSION,
         "hash_validation_passed": True,
+        "declared_file_count": len(expected_output_names),
+        "declared_file_hashes_sha256": declared_output_hash_digest,
+        "output_layout_matches": output_layout_matches,
+        "output_records_match": output_records_match,
+        "directory_layout_matches": directory_layout_matches,
         "source_sha256": source_sha,
         "source_identity_sha256": identity_sha,
         "asset_tree_sha256": asset_hash,
         "model_sha256": model_hash,
         "source_fingerprint_matches": source_fingerprint_matches,
         "builder_sha256": expected_builder,
+        "config_sha256": expected_config,
         "encoder_sha256": expected_encoder,
+        "feature_store_sha256": expected_feature_store,
         "code_fingerprints_match": code_fingerprints_match,
+        "library_fingerprints_match": libraries_match,
+        "build_metadata_valid": build_metadata_valid,
         "response_count": row_count,
         "objective_count": objective_count,
         "embedding_dimension": dimension,
         "shapes_match": shapes_match,
+        "stored_array_schema_sha256": stored_array_schema_digest,
+        "stored_array_schemas_match": stored_array_schemas_match,
         "objective_indices_valid": indices_valid,
         "objective_identities_unique": identities_unique,
         "expected_objective_identity_sha256": expected_objective_identity_sha,
@@ -1165,12 +1436,20 @@ def _audit_semantic_store(root: Path) -> dict[str, object]:
         "dense_matches": dense_match,
         "context_embeddings_all_finite": context_finite,
         "objective_embeddings_all_finite": objective_finite,
+        "context_embeddings_normalized": contexts_normalized,
+        "objective_embeddings_normalized": objectives_normalized,
         "dense_all_finite": dense_finite,
         "passed": bool(
             manifest.get("version") == SEMANTIC_STORE_VERSION
             and source_fingerprint_matches
             and code_fingerprints_match
+            and libraries_match
+            and build_metadata_valid
+            and output_layout_matches
+            and output_records_match
+            and directory_layout_matches
             and shapes_match
+            and stored_array_schemas_match
             and indices_valid
             and identities_unique
             and objective_ids_match
@@ -1179,6 +1458,8 @@ def _audit_semantic_store(root: Path) -> dict[str, object]:
             and dense_match
             and context_finite
             and objective_finite
+            and contexts_normalized
+            and objectives_normalized
             and dense_finite
         ),
     }
