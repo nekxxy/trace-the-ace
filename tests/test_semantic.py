@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -164,10 +165,18 @@ class SemanticLogisticModelTests(unittest.TestCase):
 
     def test_fold_fit_predict_and_metadata_are_deterministic(self) -> None:
         first = fit_semantic_model(
-            self.features, self.targets, c=LOGISTIC_C, seed=DEFAULT_SEED
+            self.features,
+            self.targets,
+            c=LOGISTIC_C,
+            seed=DEFAULT_SEED,
+            semantic_feature_count=5,
         )
         second = fit_semantic_model(
-            self.features, self.targets, c=LOGISTIC_C, seed=DEFAULT_SEED
+            self.features,
+            self.targets,
+            c=LOGISTIC_C,
+            seed=DEFAULT_SEED,
+            semantic_feature_count=5,
         )
         first_probabilities = first.predict_proba(self.features)
         second_probabilities = second.predict_proba(self.features)
@@ -175,7 +184,24 @@ class SemanticLogisticModelTests(unittest.TestCase):
         self.assertEqual(first_probabilities.shape, (40, 2))
         np.testing.assert_allclose(first_probabilities.sum(axis=1), 1.0)
         np.testing.assert_array_equal(first_probabilities, second_probabilities)
-        np.testing.assert_allclose(first.scaler_.mean_, self.features.mean(axis=0), atol=1e-6)
+        np.testing.assert_array_equal(first.scaler_.mean_[:5], np.zeros(5))
+        np.testing.assert_array_equal(first.scaler_.scale_[:5], np.ones(5))
+        np.testing.assert_array_equal(
+            first.scaler_.transform(self.features)[:, :5], self.features[:, :5]
+        )
+        dense_raw = StandardScaler(copy=True).fit_transform(self.features[:, 5:])
+        np.testing.assert_allclose(
+            first.scaler_.transform(self.features)[:, 5:],
+            dense_raw / np.sqrt(2),
+            rtol=1e-6,
+            atol=1e-6,
+        )
+        self.assertEqual(
+            first.scaler_.trace_ace_geometry_,
+            "natural-semantic-unit-dense-l2-v1",
+        )
+        self.assertEqual(first.scaler_.trace_ace_semantic_feature_count_, 5)
+        self.assertEqual(first.scaler_.trace_ace_dense_block_width_, 2)
 
         metadata = first.metadata_dict()
         self.assertEqual(metadata["feature_count"], 7)
@@ -199,6 +225,7 @@ class SemanticLogisticModelTests(unittest.TestCase):
                 np.zeros(40, dtype=int),
                 c=LOGISTIC_C,
                 seed=DEFAULT_SEED,
+                semantic_feature_count=5,
             )
         invalid = self.features.copy()
         invalid[0, 0] = np.inf
@@ -208,6 +235,15 @@ class SemanticLogisticModelTests(unittest.TestCase):
                 self.targets,
                 c=LOGISTIC_C,
                 seed=DEFAULT_SEED,
+                semantic_feature_count=5,
+            )
+        with self.assertRaisesRegex(ValueError, "semantic_feature_count"):
+            fit_semantic_model(
+                self.features,
+                self.targets,
+                c=LOGISTIC_C,
+                seed=DEFAULT_SEED,
+                semantic_feature_count=8,
             )
 
 

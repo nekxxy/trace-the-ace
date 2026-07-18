@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from trace_ace.config import ModelConfig
 from trace_ace.sparse import (
@@ -52,6 +53,24 @@ def test_incremental_classifier_and_dense_append_are_valid() -> None:
     assert probability.shape == (4,)
     assert np.isfinite(probability).all()
     assert ((probability >= 0.0) & (probability <= 1.0)).all()
+
+
+def test_dense_scaler_normalizes_the_complete_block_not_each_coordinate() -> None:
+    dense = np.asarray(
+        [[1.0, 10.0, -4.0], [2.0, 30.0, 0.0], [4.0, 20.0, 8.0]],
+        dtype=np.float32,
+    )
+    raw = StandardScaler(copy=True).fit(dense)
+    scaler = fit_dense_scaler(dense)
+
+    np.testing.assert_allclose(
+        scaler.transform(dense),
+        raw.transform(dense) / np.sqrt(dense.shape[1]),
+        rtol=1e-7,
+        atol=1e-7,
+    )
+    assert scaler.trace_ace_geometry_ == "standardized-unit-expected-l2-v1"
+    assert scaler.trace_ace_block_width_ == dense.shape[1]
 
 
 def test_batch_prediction_is_invariant() -> None:

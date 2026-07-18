@@ -37,6 +37,25 @@ New, explicit defaults:
 - semantic interaction layout: context, objective, absolute difference,
   elementwise product, cosine similarity, and dense controls.
 
+The first fresh primary OOF candidate failed promotion because its probability
+geometry was unjustified: coordinate-wise unit-variance scaling made the
+81-column dense block dominate the three normalized sparse text blocks, and it
+destroyed the bounded geometry of the normalized BGE interaction blocks. The
+failed evidence is retained under
+`experiments/runs/cleanroom_v02/initial_failed_candidate/`. Before running any
+robustness protocol, the clean-room rule was frozen as follows:
+
+- sparse role controls are standardized on training rows and the complete dense
+  block is divided by `sqrt(81)`, giving it unit expected L2 norm;
+- normalized BGE interaction columns remain in their natural geometry;
+- semantic dense controls receive the same fold-local standardized,
+  block-normalized treatment.
+
+This is a block-geometry correction rather than a search over weights,
+regularization, folds, or protocols. The original `25% / 25% / 50%` weights
+and all validation gates remain unchanged, and every affected primary result is
+regenerated from fresh checkpoints.
+
 These choices must earn promotion through local OOF evidence and cannot be
 described as the exact prior implementation.
 

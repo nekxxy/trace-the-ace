@@ -72,12 +72,33 @@ def new_sparse_classifier(*, alpha: float, config: ModelConfig | None = None) ->
 
 
 def fit_dense_scaler(dense: np.ndarray) -> StandardScaler:
-    """Fit a finite float32 dense-feature scaler using training rows only."""
+    """Fit a fold-local scaler whose dense block has unit expected L2 norm.
+
+    The role text representation consists of three independently L2-normalized
+    hashing blocks. Giving every dense coordinate unit variance would make the
+    81-column control block roughly nine times larger than any text block. We
+    therefore standardize each coordinate and divide the complete dense block
+    by ``sqrt(n_features)``. The fitted ``StandardScaler`` remains directly
+    serializable for inference; its effective denominator records both steps.
+    """
 
     values = np.asarray(dense, dtype=np.float32)
-    if values.ndim != 2 or not np.isfinite(values).all():
-        raise ValueError("dense features must be a finite 2D matrix")
-    return StandardScaler(copy=True).fit(values)
+    if (
+        values.ndim != 2
+        or values.shape[0] == 0
+        or values.shape[1] == 0
+        or not np.isfinite(values).all()
+    ):
+        raise ValueError("dense features must be a non-empty finite 2D matrix")
+    scaler = StandardScaler(copy=True).fit(values)
+    scaler.scale_ = np.asarray(scaler.scale_, dtype=np.float64) * np.sqrt(
+        values.shape[1]
+    )
+    if not np.isfinite(scaler.scale_).all() or np.any(scaler.scale_ <= 0):
+        raise ValueError("dense scaler produced invalid effective scales")
+    scaler.trace_ace_geometry_ = "standardized-unit-expected-l2-v1"
+    scaler.trace_ace_block_width_ = int(values.shape[1])
+    return scaler
 
 
 def train_sparse_cv(

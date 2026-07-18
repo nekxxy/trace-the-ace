@@ -14,7 +14,7 @@ import sklearn
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-from trace_ace.config import ModelConfig
+from trace_ace.config import BGE_DIMENSION, ModelConfig
 from trace_ace.provenance import (
     SEMANTIC_TRAINING_SOURCE_FILES,
     trace_ace_source_sha256,
@@ -32,6 +32,9 @@ from trace_ace.semantic_store import (
     load_semantic_manifest,
 )
 from trace_ace.validation import FoldMasks, evaluate_probabilities
+
+
+SEMANTIC_NATURAL_FEATURE_COUNT = 4 * BGE_DIMENSION + 1
 
 
 @dataclass(frozen=True)
@@ -59,14 +62,28 @@ def fit_semantic_model(
     c: float,
     seed: int,
     max_iter: int = 1_000,
+    semantic_feature_count: int = SEMANTIC_NATURAL_FEATURE_COUNT,
 ) -> SemanticLogisticModel:
-    """Fit the semantic component outside the packaged inference modules."""
+    """Fit the semantic component while preserving normalized BGE geometry.
+
+    Context, objective, difference, product, and cosine columns already have a
+    meaningful bounded geometry derived from L2-normalized embeddings. They
+    are intentionally left unchanged. Any trailing dense-control block is
+    standardized fold-locally and divided by the square root of its width so it
+    contributes unit expected L2 norm rather than one unit per coordinate.
+    """
 
     matrix = np.asarray(features, dtype=np.float32)
     if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
         raise ValueError("features must be a non-empty two-dimensional matrix")
     if not np.isfinite(matrix).all():
         raise ValueError("features contains non-finite values")
+    if (
+        not isinstance(semantic_feature_count, int)
+        or semantic_feature_count < 1
+        or semantic_feature_count > matrix.shape[1]
+    ):
+        raise ValueError("semantic_feature_count must identify a non-empty feature prefix")
     labels = np.asarray(targets)
     if labels.ndim != 1 or labels.size != matrix.shape[0]:
         raise ValueError("targets must match the feature rows")
@@ -79,8 +96,22 @@ def fit_semantic_model(
         raise ValueError("training targets must contain both binary classes")
 
     model = SemanticLogisticModel(c=c, seed=seed, max_iter=max_iter)
-    model.scaler_ = StandardScaler()
-    scaled = model.scaler_.fit_transform(matrix)
+    model.scaler_ = StandardScaler(copy=True).fit(matrix)
+    model.scaler_.mean_[:semantic_feature_count] = 0.0
+    model.scaler_.scale_[:semantic_feature_count] = 1.0
+    dense_width = matrix.shape[1] - semantic_feature_count
+    if dense_width:
+        model.scaler_.scale_[semantic_feature_count:] *= np.sqrt(dense_width)
+    if (
+        not np.isfinite(model.scaler_.mean_).all()
+        or not np.isfinite(model.scaler_.scale_).all()
+        or np.any(model.scaler_.scale_ <= 0)
+    ):
+        raise ValueError("semantic scaler produced invalid effective parameters")
+    model.scaler_.trace_ace_geometry_ = "natural-semantic-unit-dense-l2-v1"
+    model.scaler_.trace_ace_semantic_feature_count_ = int(semantic_feature_count)
+    model.scaler_.trace_ace_dense_block_width_ = int(dense_width)
+    scaled = model.scaler_.transform(matrix)
     model.classifier_ = LogisticRegression(
         C=model.c,
         random_state=model.seed,
@@ -91,7 +122,7 @@ def fit_semantic_model(
     model.n_features_in_ = int(matrix.shape[1])
     model.metadata_ = SemanticModelMetadata(
         format_version=METADATA_VERSION,
-        estimator="StandardScaler+LogisticRegression",
+        estimator="NaturalSemantic+BlockNormalizedDense+LogisticRegression",
         feature_count=model.n_features_in_,
         classes=tuple(int(value) for value in model.classifier_.classes_),
         logistic_c=model.c,
