@@ -41,10 +41,12 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 MAX_ARCHIVE_BYTES = 60 * 1024**3
 MAX_CAPTURE_BYTES = 64 * 1024**2
 REPORT_SCHEMA_VERSION = 1
+FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
 REQUIRED_MEMBERS = {
     "main.py",
     "model/model.joblib",
+    "submission_metadata.json",
     "trace_ace/__init__.py",
     "trace_ace/config.py",
     "trace_ace/ensemble.py",
@@ -208,6 +210,18 @@ def inspect_zip(zip_path: str | Path) -> tuple[dict[str, object], list[zipfile.Z
                 raise VerificationError("duplicate_zip_member", "zip")
             if len({name.casefold() for name in names}) != len(names):
                 raise VerificationError("case_colliding_zip_member", "zip")
+            if any(info.date_time != FIXED_ZIP_TIME for info in infos):
+                raise VerificationError("zip_timestamp_not_fixed", "zip")
+            for info in infos:
+                mode = (info.external_attr >> 16) & 0o777
+                expected_mode = 0o755 if info.is_dir() else 0o644
+                if mode != expected_mode:
+                    raise VerificationError("zip_mode_not_fixed", "zip")
+                expected_compression = (
+                    zipfile.ZIP_STORED if info.is_dir() else zipfile.ZIP_DEFLATED
+                )
+                if info.compress_type != expected_compression:
+                    raise VerificationError("zip_compression_not_fixed", "zip")
             name_set = set(names)
             if not REQUIRED_MEMBERS.issubset(name_set):
                 raise VerificationError("required_zip_member_missing", "zip")
@@ -232,6 +246,22 @@ def inspect_zip(zip_path: str | Path) -> tuple[dict[str, object], list[zipfile.Z
                 raise VerificationError("zip_uncompressed_size_too_large", "zip")
             if archive.testzip() is not None:
                 raise VerificationError("zip_crc_failed", "zip")
+            member_manifest = []
+            for info, name in zip(infos, names, strict=True):
+                digest = hashlib.sha256()
+                with archive.open(info, "r") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                member_manifest.append(
+                    {
+                        "bytes": info.file_size,
+                        "compressed_bytes": info.compress_size,
+                        "crc32": f"{info.CRC:08x}",
+                        "mode": f"{((info.external_attr >> 16) & 0o777):04o}",
+                        "name": name,
+                        "sha256": digest.hexdigest(),
+                    }
+                )
     except VerificationError:
         raise
     except (OSError, zipfile.BadZipFile, RuntimeError, ValueError) as error:
@@ -241,6 +271,9 @@ def inspect_zip(zip_path: str | Path) -> tuple[dict[str, object], list[zipfile.Z
             "bytes": archive_path.stat().st_size,
             "crc_passed": True,
             "entry_count": len(infos),
+            "fixed_modes": True,
+            "fixed_timestamps": True,
+            "members": member_manifest,
             "safe_paths": True,
             "sha256": sha256_file(archive_path),
             "uncompressed_bytes": total_uncompressed,
@@ -392,6 +425,70 @@ def audit_package_bytes(extraction_root: str | Path) -> dict[str, object]:
         "passed": not violations,
         "violation_count": len(violations),
         "violations": violations,
+    }
+
+
+def _asset_tree_sha256(root: Path) -> str:
+    digest = hashlib.sha256()
+    paths = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if ".cache" not in path.relative_to(root).parts
+        ),
+        key=lambda path: path.relative_to(root).as_posix(),
+    )
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        kind = "directory" if path.is_dir() else "file"
+        for value in (kind, relative):
+            encoded = value.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+        if path.is_file():
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+    return digest.hexdigest()
+
+
+def audit_submission_metadata(extraction_root: str | Path) -> dict[str, object]:
+    """Cross-check safe package metadata against the extracted package bytes."""
+
+    root = Path(extraction_root).resolve()
+    metadata_path = root / "submission_metadata.json"
+    model_path = root / "model/model.joblib"
+    asset_root = root / "assets/bge-small-en-v1.5"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise VerificationError("submission_metadata_invalid", "provenance") from error
+    if not isinstance(metadata, dict):
+        raise VerificationError("submission_metadata_invalid", "provenance")
+    required_strings = (
+        "artifact_sha256",
+        "bge_revision",
+        "bge_model_sha256",
+        "bge_asset_tree_sha256",
+        "runtime_commit",
+    )
+    if any(
+        not isinstance(metadata.get(field), str) or not metadata[field]
+        for field in required_strings
+    ) or metadata.get("external_training_data") != []:
+        raise VerificationError("submission_metadata_invalid", "provenance")
+    actual = {
+        "artifact_sha256": sha256_file(model_path),
+        "bge_model_sha256": sha256_file(asset_root / "model.safetensors"),
+        "bge_asset_tree_sha256": _asset_tree_sha256(asset_root),
+    }
+    if any(metadata.get(field) != value for field, value in actual.items()):
+        raise VerificationError("submission_metadata_hash_mismatch", "provenance")
+    return {
+        **{field: metadata[field] for field in required_strings},
+        "external_training_data": [],
+        "hashes_match_extracted_bytes": True,
+        "validated": True,
     }
 
 
@@ -803,6 +900,9 @@ def verify_submission(
                 "ephemeral": True,
                 "safe": True,
             }
+            report["submission_metadata"] = audit_submission_metadata(
+                extraction_root
+            )
             expected_model = extraction_root / "model/model.joblib"
             expected_assets = extraction_root / "assets/bge-small-en-v1.5"
             if not expected_model.is_file() or not expected_assets.is_dir():

@@ -175,6 +175,7 @@ def main() -> int:
         required = {
             "main.py",
             "model/model.joblib",
+            "submission_metadata.json",
             "LICENSE",
             "NOTICE.txt",
             "THIRD_PARTY_LICENSES/BAAI_BGE_MIT.txt",

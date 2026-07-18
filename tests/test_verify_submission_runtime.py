@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -18,6 +19,8 @@ from scripts.verify_submission_runtime import (
     validate_submission_csv,
     verify_submission,
 )
+from scripts.build_submission import _write_zip
+from trace_ace.provenance import asset_tree_sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -123,12 +126,28 @@ def _package(root: Path, *, main_source: str = SYNTHETIC_MAIN) -> Path:
     (source / "THIRD_PARTY_LICENSES/BAAI_BGE_MIT.txt").write_text(
         "synthetic third-party license\n", encoding="utf-8"
     )
+    model_sha256 = hashlib.sha256(b"synthetic-model").hexdigest()
+    weights_sha256 = hashlib.sha256(b"weights").hexdigest()
+    (source / "submission_metadata.json").write_text(
+        json.dumps(
+            {
+                "artifact_sha256": model_sha256,
+                "bge_asset_tree_sha256": asset_tree_sha256(
+                    source / "assets/bge-small-en-v1.5"
+                ),
+                "bge_model_sha256": weights_sha256,
+                "bge_revision": "synthetic-revision",
+                "external_training_data": [],
+                "runtime_commit": "synthetic-runtime",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     archive = root / "submission.zip"
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
-        for path in sorted(source.rglob("*")):
-            if path.is_file():
-                output.write(path, path.relative_to(source).as_posix())
-        output.writestr("assets/bge-small-en-v1.5/2_Normalize/", b"")
+    _write_zip(source, archive)
     return archive
 
 
@@ -148,6 +167,10 @@ def test_verifier_runs_extracted_package_and_reports_only_safe_evidence(tmp_path
     serialized = json.dumps(report, sort_keys=True)
     assert report["status"] == "passed"
     assert report["zip"]["crc_passed"] is True
+    assert report["zip"]["fixed_modes"] is True
+    assert report["zip"]["fixed_timestamps"] is True
+    assert len(report["zip"]["members"]) == report["zip"]["entry_count"]
+    assert report["submission_metadata"]["hashes_match_extracted_bytes"] is True
     assert report["repeatability"]["byte_identical"] is True
     assert report["batch_invariance"]["allclose"] is True
     assert all(
