@@ -223,6 +223,21 @@ def main() -> int:
             {"oof_sha256": args.robust_summary.parent / protocol_name / "oof.parquet"},
             protocol_name,
         )
+    calibration_evidence = primary_metrics.get("full_calibration")
+    if (
+        not isinstance(calibration_evidence, list)
+        or len(calibration_evidence) != 2
+        or not all(
+            isinstance(value, (int, float)) and np.isfinite(value)
+            for value in calibration_evidence
+        )
+        or float(calibration_evidence[0]) <= 0.0
+    ):
+        raise ValueError("primary validation lacks a valid full calibration")
+    full_calibration = (
+        float(calibration_evidence[0]),
+        float(calibration_evidence[1]),
+    )
     feature_config = response_view_manifest["sources"]["feature_config"]
     sparse_model = train_final_sparse(
         store_dir=args.sparse_store,
@@ -241,6 +256,7 @@ def main() -> int:
         sparse=sparse_model,
         semantic=semantic_model,
         weights=(config.full_weight, config.role_weight, config.semantic_weight),
+        full_calibration=full_calibration,
         training_metadata={
             "python": platform.python_version(),
             "joblib": joblib.__version__,

@@ -47,6 +47,8 @@ VALIDATION_PIPELINE_SOURCE_FILES = tuple(
         {
             *SPARSE_CV_SOURCE_FILES,
             *SEMANTIC_CV_SOURCE_FILES,
+            "calibration.py",
+            "calibration_training.py",
             "ensemble.py",
         }
     )

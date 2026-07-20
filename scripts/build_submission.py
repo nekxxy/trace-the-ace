@@ -22,6 +22,7 @@ RUNTIME_CHECKOUT = PROJECT_ROOT / "vendor/tutoring-outcomes-runtime"
 RUNTIME_COMMIT = "ea9a81755e101b8036e386430c3a2f3d7c655f2e"
 RUNTIME_MODULES = (
     "__init__.py",
+    "calibration.py",
     "config.py",
     "ensemble.py",
     "features.py",

@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from trace_ace.calibration import apply_full_calibration
+from trace_ace.calibration_training import fit_full_calibration
 from trace_ace.config import ModelConfig
 from trace_ace.ensemble import blend_probabilities
 from trace_ace.provenance import (
@@ -26,6 +28,31 @@ from trace_ace.validation import evaluate_probabilities, objective_disjoint_fold
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _nested_full_calibration(
+    full_raw: np.ndarray, targets: np.ndarray, folds: list
+) -> np.ndarray:
+    """Return out-of-fold Platt calibration of the full component.
+
+    For each validation fold the calibrator is fit on the full out-of-fold
+    predictions of every *other* fold and applied to the held-out fold, so a
+    row's calibrated value never depends on that row's own label.
+    """
+
+    calibrated = np.full(len(targets), np.nan, dtype=np.float64)
+    val_indices = [fold.validation_indices for fold in folds]
+    for position, fold in enumerate(folds):
+        train_rows = np.concatenate(
+            [val_indices[other] for other in range(len(folds)) if other != position]
+        )
+        params = fit_full_calibration(full_raw[train_rows], targets[train_rows])
+        calibrated[fold.validation_indices] = apply_full_calibration(
+            full_raw[fold.validation_indices], params
+        )
+    if not np.isfinite(calibrated).all():
+        raise ValueError("nested full calibration did not cover every OOF row")
+    return calibrated
 
 
 def main() -> int:
@@ -101,13 +128,6 @@ def main() -> int:
         source_files=SEMANTIC_CV_SOURCE_FILES,
         runner_path=PROJECT_ROOT / "scripts/run_semantic_cv.py",
     )
-    probability = blend_probabilities(
-        sparse["full_probability"].to_numpy(),
-        sparse["role_probability"].to_numpy(),
-        semantic["semantic_probability"].to_numpy(),
-        weights=(config.full_weight, config.role_weight, config.semantic_weight),
-        probability_floor=config.probability_floor,
-    )
     targets = sparse["is_correct"].to_numpy()
     if not np.array_equal(responses["row_id"].to_numpy(), sparse["row_id"].to_numpy()):
         raise ValueError("OOF and response row IDs differ")
@@ -121,11 +141,26 @@ def main() -> int:
         )
     if not np.isfinite(baseline_probability).all():
         raise ValueError("fold baseline did not cover every OOF row")
+    full_raw = sparse["full_probability"].to_numpy()
+    role_raw = sparse["role_probability"].to_numpy()
+    semantic_raw = semantic["semantic_probability"].to_numpy()
+    # The deployed ensemble calibrates the over-scaled full component before the
+    # fixed blend. Out-of-fold calibration keeps the reported metric honest; the
+    # final scalars fit on all OOF rows are what the runtime artifact stores.
+    calibrated_full = _nested_full_calibration(full_raw, targets, folds)
+    full_calibration = fit_full_calibration(full_raw, targets)
+    probability = blend_probabilities(
+        calibrated_full,
+        role_raw,
+        semantic_raw,
+        weights=(config.full_weight, config.role_weight, config.semantic_weight),
+        probability_floor=config.probability_floor,
+    )
     component_predictions = {
         "baseline": baseline_probability,
-        "full": sparse["full_probability"].to_numpy(),
-        "role": sparse["role_probability"].to_numpy(),
-        "semantic": semantic["semantic_probability"].to_numpy(),
+        "full": full_raw,
+        "role": role_raw,
+        "semantic": semantic_raw,
         "ensemble": probability,
     }
     fold_metrics = []
@@ -160,6 +195,7 @@ def main() -> int:
     metrics = {
         "config": config.to_dict(),
         "weights": [config.full_weight, config.role_weight, config.semantic_weight],
+        "full_calibration": [float(full_calibration[0]), float(full_calibration[1])],
         "protocol": "objective-disjoint SGKF with validation-session purge",
         "response_identity_sha256": response_digest,
         "response_view_sha256": response_view_hash,
@@ -202,9 +238,10 @@ def main() -> int:
             "row_id": sparse["row_id"],
             "is_correct": targets,
             "baseline_probability": baseline_probability,
-            "full_probability": sparse["full_probability"],
-            "role_probability": sparse["role_probability"],
-            "semantic_probability": semantic["semantic_probability"],
+            "full_probability": full_raw,
+            "calibrated_full_probability": calibrated_full,
+            "role_probability": role_raw,
+            "semantic_probability": semantic_raw,
             "ensemble_probability": probability,
         }
     ).to_parquet(args.run_dir / "ensemble_oof.parquet", index=False)

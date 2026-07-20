@@ -13,6 +13,7 @@ import pandas as pd
 import sklearn
 from sklearn.utils.validation import check_is_fitted
 
+from trace_ace.calibration import apply_full_calibration, validate_full_calibration
 from trace_ace.config import BGE_DIMENSION, ModelConfig
 from trace_ace.features import DENSE_FEATURE_NAMES, FeatureConfig, extract_objective_features
 from trace_ace.io import read_transcript
@@ -32,11 +33,12 @@ from trace_ace.sparse import (
 )
 
 
-ARTIFACT_FORMAT_VERSION = 1
+ARTIFACT_FORMAT_VERSION = 2
 ROLE_DENSE_SCALER_GEOMETRY = "standardized-unit-expected-l2-v1"
 SEMANTIC_SCALER_GEOMETRY = "natural-semantic-unit-dense-l2-v1"
 RUNTIME_SOURCE_FILES = (
     "__init__.py",
+    "calibration.py",
     "config.py",
     "ensemble.py",
     "features.py",
@@ -78,6 +80,7 @@ class FinalEnsembleArtifact:
     sparse: SparseArtifact
     semantic: SemanticLogisticModel
     weights: tuple[float, float, float]
+    full_calibration: tuple[float, float]
     training_metadata: dict[str, object]
 
     def validate_runtime(self) -> ModelConfig:
@@ -135,6 +138,10 @@ class FinalEnsembleArtifact:
         )
         if not np.allclose(self.weights, expected_weights, rtol=0.0, atol=0.0):
             raise RuntimeError("ensemble weights differ from model configuration")
+        try:
+            validate_full_calibration(self.full_calibration)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("full calibration parameters are invalid") from error
         expected_semantic = 4 * BGE_DIMENSION + 1 + len(DENSE_FEATURE_NAMES)
         if getattr(self.semantic, "n_features_in_", None) != expected_semantic:
             raise RuntimeError("semantic model feature dimension is invalid")
@@ -353,6 +360,9 @@ def predict_test_directory(
         full_probability = positive_probability(
             artifact.sparse.full_model,
             transform_full_text(frame, config),
+        )
+        full_probability = apply_full_calibration(
+            full_probability, artifact.full_calibration
         )
         role_matrix = append_scaled_dense(
             transform_role_text(frame, config),

@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from trace_ace.calibration import apply_full_calibration
+from trace_ace.calibration_training import fit_full_calibration
 from trace_ace.config import ModelConfig, SEMANTIC_PROTOCOLS
 from trace_ace.ensemble import blend_probabilities
 from trace_ace.provenance import (
@@ -32,6 +34,26 @@ from trace_ace.validation import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _nested_full_calibration(
+    full_raw: np.ndarray, targets: np.ndarray, folds: list
+) -> np.ndarray:
+    """Out-of-fold Platt calibration of the full component for one protocol."""
+
+    calibrated = np.full(len(targets), np.nan, dtype=np.float64)
+    val_indices = [fold.validation_indices for fold in folds]
+    for position, fold in enumerate(folds):
+        train_rows = np.concatenate(
+            [val_indices[other] for other in range(len(folds)) if other != position]
+        )
+        params = fit_full_calibration(full_raw[train_rows], targets[train_rows])
+        calibrated[fold.validation_indices] = apply_full_calibration(
+            full_raw[fold.validation_indices], params
+        )
+    if not np.isfinite(calibrated).all():
+        raise ValueError("nested full calibration did not cover every row")
+    return calibrated
 
 
 def main() -> int:
@@ -139,8 +161,11 @@ def main() -> int:
             checkpoint_dir=protocol_dir / "checkpoints",
             progress=lambda message, name=protocol_name: print(f"{name}: {message}", flush=True),
         )
+        calibrated_full = _nested_full_calibration(
+            sparse_result.full_oof, targets, folds
+        )
         ensemble = blend_probabilities(
-            sparse_result.full_oof,
+            calibrated_full,
             sparse_result.role_oof,
             semantic_result.oof,
             weights=(config.full_weight, config.role_weight, config.semantic_weight),
@@ -226,6 +251,7 @@ def main() -> int:
                 "is_correct": targets,
                 "baseline_probability": baseline,
                 "full_probability": sparse_result.full_oof,
+                "calibrated_full_probability": calibrated_full,
                 "role_probability": sparse_result.role_oof,
                 "semantic_probability": semantic_result.oof,
                 "ensemble_probability": ensemble,
