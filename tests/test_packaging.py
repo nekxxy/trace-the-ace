@@ -22,7 +22,7 @@ from scripts.build_submission import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_SOURCE_ROOT = PROJECT_ROOT / "src" / "trace_ace"
-BGE_ASSET_ROOT = PROJECT_ROOT / "assets" / "bge-small-en-v1.5"
+BGE_ASSET_ROOT = PROJECT_ROOT / "assets" / "bge-base-en-v1.5"
 TRAINING_ONLY_MODULES = {
     "trace_ace.cache",
     "trace_ace.feature_store",

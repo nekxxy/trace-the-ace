@@ -23,7 +23,7 @@ def main() -> int:
     parser.add_argument(
         "--asset",
         type=Path,
-        default=PROJECT_ROOT / "assets/bge-small-en-v1.5",
+        default=PROJECT_ROOT / "assets/bge-base-en-v1.5",
     )
     parser.add_argument(
         "--output",

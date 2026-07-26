@@ -171,9 +171,9 @@ def _write_semantic_store(root: Path, source: Path) -> Path:
     )
     asset_parent = root / "assets"
     asset_parent.mkdir(parents=True)
-    asset = asset_parent / "bge-small-en-v1.5"
+    asset = asset_parent / "bge-base-en-v1.5"
     asset.symlink_to(
-        PROJECT_ROOT / "assets" / "bge-small-en-v1.5", target_is_directory=True
+        PROJECT_ROOT / "assets" / "bge-base-en-v1.5", target_is_directory=True
     )
     store = root / "data" / "processed" / "semantic_store"
     store.mkdir(parents=True)

@@ -122,7 +122,7 @@ def main() -> int:
         raise RuntimeError("artifact has the wrong type")
     artifact.validate_runtime()
     resources = json.loads((PROJECT_ROOT / "configs/resources.json").read_text())
-    approved_bge = resources["bge_small_en_v1_5"]
+    approved_bge = resources["bge_base_en_v1_5"]
     if args.staging.exists():
         shutil.rmtree(args.staging)
     args.staging.mkdir(parents=True)
@@ -141,7 +141,7 @@ def main() -> int:
     model_dir = args.staging / "model"
     model_dir.mkdir()
     shutil.copy2(args.artifact, model_dir / "model.joblib")
-    asset_source = PROJECT_ROOT / "assets/bge-small-en-v1.5"
+    asset_source = PROJECT_ROOT / "assets/bge-base-en-v1.5"
     asset_tree_hash = asset_tree_sha256(asset_source)
     if asset_tree_hash != approved_bge["asset_tree_sha256"]:
         raise RuntimeError("local BGE asset tree is not the approved resource")
@@ -149,7 +149,7 @@ def main() -> int:
         raise RuntimeError("artifact and packaged BGE asset trees differ")
     if _sha256(asset_source / "model.safetensors") != approved_bge["model_safetensors_sha256"]:
         raise RuntimeError("local BGE model weights are not the approved resource")
-    asset_target = args.staging / "assets/bge-small-en-v1.5"
+    asset_target = args.staging / "assets/bge-base-en-v1.5"
     shutil.copytree(
         asset_source,
         asset_target,
@@ -180,10 +180,10 @@ def main() -> int:
             "LICENSE",
             "NOTICE.txt",
             "THIRD_PARTY_LICENSES/BAAI_BGE_MIT.txt",
-            "assets/bge-small-en-v1.5/model.safetensors",
-            "assets/bge-small-en-v1.5/modules.json",
-            "assets/bge-small-en-v1.5/tokenizer.json",
-            "assets/bge-small-en-v1.5/2_Normalize/",
+            "assets/bge-base-en-v1.5/model.safetensors",
+            "assets/bge-base-en-v1.5/modules.json",
+            "assets/bge-base-en-v1.5/tokenizer.json",
+            "assets/bge-base-en-v1.5/2_Normalize/",
             *{f"trace_ace/{name}" for name in RUNTIME_MODULES},
         }
         if not required.issubset(names):

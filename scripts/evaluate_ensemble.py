@@ -35,17 +35,15 @@ def _nested_full_calibration(
 ) -> np.ndarray:
     """Return out-of-fold Platt calibration of the full component.
 
-    For each validation fold the calibrator is fit on the full out-of-fold
-    predictions of every *other* fold and applied to the held-out fold, so a
-    row's calibrated value never depends on that row's own label.
+    For each validation fold the calibrator is fit on that fold's own
+    session-purged training rows (``fold.train_indices``), so a row's
+    calibrated value never depends on that row's own label *and* never on a
+    row sharing a session with the held-out fold.
     """
 
     calibrated = np.full(len(targets), np.nan, dtype=np.float64)
-    val_indices = [fold.validation_indices for fold in folds]
-    for position, fold in enumerate(folds):
-        train_rows = np.concatenate(
-            [val_indices[other] for other in range(len(folds)) if other != position]
-        )
+    for fold in folds:
+        train_rows = fold.train_indices
         params = fit_full_calibration(full_raw[train_rows], targets[train_rows])
         calibrated[fold.validation_indices] = apply_full_calibration(
             full_raw[fold.validation_indices], params

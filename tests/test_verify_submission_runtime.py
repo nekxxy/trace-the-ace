@@ -35,7 +35,7 @@ def main():
     predictions = predict_test_directory(
         data_dir=ROOT / "data",
         artifact_path=ROOT / "model" / "model.joblib",
-        bge_asset_path=ROOT / "assets" / "bge-small-en-v1.5",
+        bge_asset_path=ROOT / "assets" / "bge-base-en-v1.5",
     )
     predictions.to_csv(ROOT / "submission.csv", index=False)
 
@@ -95,7 +95,7 @@ def _package(root: Path, *, main_source: str = SYNTHETIC_MAIN) -> Path:
     source = root / "package"
     (source / "trace_ace").mkdir(parents=True)
     (source / "model").mkdir()
-    (source / "assets/bge-small-en-v1.5").mkdir(parents=True)
+    (source / "assets/bge-base-en-v1.5").mkdir(parents=True)
     (source / "THIRD_PARTY_LICENSES").mkdir()
     (source / "main.py").write_text(main_source, encoding="utf-8")
     (source / "trace_ace/__init__.py").write_text("", encoding="utf-8")
@@ -103,10 +103,10 @@ def _package(root: Path, *, main_source: str = SYNTHETIC_MAIN) -> Path:
     for name in ("config.py", "features.py", "io.py", "provenance.py", "semantic.py", "sparse.py"):
         (source / "trace_ace" / name).write_text("", encoding="utf-8")
     (source / "model/model.joblib").write_bytes(b"synthetic-model")
-    (source / "assets/bge-small-en-v1.5/model.safetensors").write_bytes(b"weights")
-    (source / "assets/bge-small-en-v1.5/modules.json").write_text("{}\n", encoding="utf-8")
-    (source / "assets/bge-small-en-v1.5/1_Pooling").mkdir()
-    (source / "assets/bge-small-en-v1.5/2_Normalize").mkdir()
+    (source / "assets/bge-base-en-v1.5/model.safetensors").write_bytes(b"weights")
+    (source / "assets/bge-base-en-v1.5/modules.json").write_text("{}\n", encoding="utf-8")
+    (source / "assets/bge-base-en-v1.5/1_Pooling").mkdir()
+    (source / "assets/bge-base-en-v1.5/2_Normalize").mkdir()
     for name in (
         "README.md",
         "config.json",
@@ -117,8 +117,8 @@ def _package(root: Path, *, main_source: str = SYNTHETIC_MAIN) -> Path:
         "tokenizer_config.json",
         "vocab.txt",
     ):
-        (source / "assets/bge-small-en-v1.5" / name).write_text("{}\n", encoding="utf-8")
-    (source / "assets/bge-small-en-v1.5/1_Pooling/config.json").write_text(
+        (source / "assets/bge-base-en-v1.5" / name).write_text("{}\n", encoding="utf-8")
+    (source / "assets/bge-base-en-v1.5/1_Pooling/config.json").write_text(
         "{}\n", encoding="utf-8"
     )
     (source / "LICENSE").write_text("synthetic license\n", encoding="utf-8")
@@ -133,7 +133,7 @@ def _package(root: Path, *, main_source: str = SYNTHETIC_MAIN) -> Path:
             {
                 "artifact_sha256": model_sha256,
                 "bge_asset_tree_sha256": asset_tree_sha256(
-                    source / "assets/bge-small-en-v1.5"
+                    source / "assets/bge-base-en-v1.5"
                 ),
                 "bge_model_sha256": weights_sha256,
                 "bge_revision": "synthetic-revision",

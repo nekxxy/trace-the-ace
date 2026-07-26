@@ -30,6 +30,7 @@ from trace_ace.validation import (
     assign_semantic_families,
     evaluate_probabilities,
     semantic_family_disjoint_folds,
+    session_grouped_folds,
 )
 
 
@@ -39,14 +40,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def _nested_full_calibration(
     full_raw: np.ndarray, targets: np.ndarray, folds: list
 ) -> np.ndarray:
-    """Out-of-fold Platt calibration of the full component for one protocol."""
+    """Out-of-fold Platt calibration of the full component for one protocol.
+
+    Each fold's calibrator is fit on that fold's own session-purged training
+    rows (``fold.train_indices``), not on the raw union of other folds'
+    validation rows, which would re-include rows purged for sharing a
+    session with this fold's held-out rows.
+    """
 
     calibrated = np.full(len(targets), np.nan, dtype=np.float64)
-    val_indices = [fold.validation_indices for fold in folds]
-    for position, fold in enumerate(folds):
-        train_rows = np.concatenate(
-            [val_indices[other] for other in range(len(folds)) if other != position]
-        )
+    for fold in folds:
+        train_rows = fold.train_indices
         params = fit_full_calibration(full_raw[train_rows], targets[train_rows])
         calibrated[fold.validation_indices] = apply_full_calibration(
             full_raw[fold.validation_indices], params
@@ -131,20 +135,7 @@ def main() -> int:
         "protocols": {},
     }
 
-    for protocol_name in selected:
-        family_count, family_seed = available[protocol_name]
-        families = assign_semantic_families(
-            semantic_arrays.objective_embeddings,
-            objective_ids=semantic_arrays.objective_ids,
-            n_families=family_count,
-            seed=family_seed,
-        )
-        folds = semantic_family_disjoint_folds(
-            responses,
-            families,
-            seed=config.seed + family_seed,
-            protocol_name=protocol_name,
-        )
+    def _evaluate_protocol(protocol_name: str, folds: list) -> dict:
         protocol_dir = args.run_dir / protocol_name
         protocol_dir.mkdir(parents=True, exist_ok=True)
         sparse_result = train_sparse_cv(
@@ -258,11 +249,27 @@ def main() -> int:
             }
         ).to_parquet(oof_path, index=False)
         metrics["oof_sha256"] = file_sha256(oof_path)
-        summary["protocols"][protocol_name] = metrics
         (protocol_dir / "metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         print(json.dumps({protocol_name: metrics["ensemble"]}), flush=True)
+        return metrics
+
+    for protocol_name in selected:
+        family_count, family_seed = available[protocol_name]
+        families = assign_semantic_families(
+            semantic_arrays.objective_embeddings,
+            objective_ids=semantic_arrays.objective_ids,
+            n_families=family_count,
+            seed=family_seed,
+        )
+        folds = semantic_family_disjoint_folds(
+            responses,
+            families,
+            seed=config.seed + family_seed,
+            protocol_name=protocol_name,
+        )
+        summary["protocols"][protocol_name] = _evaluate_protocol(protocol_name, folds)
 
     protocol_metrics = summary["protocols"]
     summary["promotion_gate"] = {
@@ -279,6 +286,18 @@ def main() -> int:
             key=lambda name: protocol_metrics[name]["ensemble"]["log_loss"],
         ),
     }
+
+    # Session-disjoint protocol: a different generalization axis (unseen tutoring
+    # sessions, but NOT unseen learning objectives) than the 5 objective/family-
+    # disjoint protocols above. Reported separately, not folded into the strict
+    # promotion gate, since it is not apples-to-apples with the objective-disjoint
+    # criterion the private test actually mirrors. It exists to catch a candidate
+    # that looks clean on every objective-disjoint split but is secretly exploiting
+    # session-level structure - added as gate-hardening per the 2026-07-20 synthesis.
+    if not args.protocol:
+        session_folds = session_grouped_folds(responses, seed=config.seed)
+        summary["session_protocol"] = _evaluate_protocol("session", session_folds)
+
     (args.run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

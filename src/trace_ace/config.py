@@ -18,9 +18,9 @@ BUILD_DIR = PROJECT_ROOT / "submissions" / "builds"
 
 SEED = 20_260_716
 MODEL_VERSION = "cleanroom-v02"
-BGE_REPOSITORY = "BAAI/bge-small-en-v1.5"
-BGE_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
-BGE_DIMENSION = 384
+BGE_REPOSITORY = "BAAI/bge-base-en-v1.5"
+BGE_REVISION = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"
+BGE_DIMENSION = 768
 
 
 @dataclass(frozen=True)

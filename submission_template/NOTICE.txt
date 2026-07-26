@@ -1,5 +1,5 @@
-This submission uses BAAI/bge-small-en-v1.5, distributed under the MIT
-license, from pinned revision 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a.
+This submission uses BAAI/bge-base-en-v1.5, distributed under the MIT
+license, from pinned revision a5beb1e3e68b9ab74eb54cfd186867f64f240e1a.
 The upstream MIT notice is included at
 THIRD_PARTY_LICENSES/BAAI_BGE_MIT.txt.
 

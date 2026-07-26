@@ -6,6 +6,12 @@
   reconstruction boundary, validation gates, and licensing posture.
 - `data_inventory.md`: locally verified source files, schemas, counts, and
   integrity results.
+- `agent_handoff.md`: detailed narrative of the most recent work session
+  (what was tried, what broke, what was fixed, what's still in progress) -
+  read this for context before continuing prior work. See also
+  `../CLAUDE.md` (project root) for the short-form version, and
+  `../experiments/improvements/README.md` for the version-by-version
+  scoreboard and the lessons that generalize.
 
 ## `competition/`
 

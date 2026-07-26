@@ -6,21 +6,26 @@ The task is to predict the probability that a student answers an aligned follow-
 
 ## Current status
 
+**See `experiments/improvements/README.md` for the live scoreboard and
+`CLAUDE.md` / `docs/agent_handoff.md` for full context — this section is a
+snapshot, not the source of truth.**
+
 - All official training tables and 22,821 transcript files are present and validated.
 - Raw source downloads are preserved separately from canonical working inputs.
 - The official runtime is pinned locally at commit `ea9a81755e101b8036e386430c3a2f3d7c655f2e`.
 - Python serialization dependencies now match the official runtime, including scikit-learn 1.8.0 and NumPy 2.2.6.
 - Memory-bounded caches, leakage-safe folds, sparse models, offline BGE semantic features, ensemble inference, tests, and deterministic packaging are implemented.
-- Primary objective-disjoint CV and all four required semantic-family robustness
-  protocols pass the fixed-ensemble promotion gate.
-- The final model is `models/final_ensemble_cleanroom_v02.joblib` (SHA-256
-  `87ad03d488242fe5bfe91905251a73bc7010694f9be20abd0a43fa2bc6876738`).
-- The byte-reproducible package is
-  `submissions/builds/trace_ace_cleanroom_v02.zip` (SHA-256
-  `ff9578e9f3494018df996cd7fa3d4a60efd1d7ff0e32b0c385f297fc371651e0`).
-- Extracted-package and pinned official-container checks pass. Platform
-  authentication is unavailable on this host, so an exact-hash platform Smoke
-  job is the only remaining gate; no new Normal submission has been made.
+- Primary objective-disjoint CV, all four semantic-family robustness protocols,
+  and a session-disjoint hardening protocol are computed for every candidate.
+- **Best real submission: v06** (bge-base semantic encoder) — real public log
+  loss 0.6073, rank 20. Model:
+  `models/final_ensemble_cleanroom_v06.joblib`; package:
+  `submissions/builds/trace_ace_cleanroom_v06.zip` (SHA-256
+  `e55f1c7e2b969e88a042389ece54e05b04cd3e09e9538c3073c651c2af88b6b1`).
+- v07 (bge-large semantic encoder) was built and packaged successfully but
+  regressed on robust CV vs v06 — not submitted; kept as a record only.
+- v08 (knowledge-graph-inspired dense features) extraction is done; CV
+  ablation against v06 is the next step (`scripts/graph_ablation_cv.py`).
 
 ## Project layout
 

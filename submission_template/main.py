@@ -21,7 +21,7 @@ def main() -> None:
     predictions = predict_test_directory(
         data_dir=ROOT / "data",
         artifact_path=ROOT / "model" / "model.joblib",
-        bge_asset_path=ROOT / "assets" / "bge-small-en-v1.5",
+        bge_asset_path=ROOT / "assets" / "bge-base-en-v1.5",
     )
     predictions.to_csv(ROOT / "submission.csv", index=False)
 

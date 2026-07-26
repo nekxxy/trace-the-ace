@@ -1225,7 +1225,7 @@ def _audit_semantic_store(root: Path) -> dict[str, object]:
     source_sha = file_sha256(view_path)
     source = _safe_dict(manifest.get("source"))
     code = _safe_dict(source.get("code"))
-    asset = root / "assets" / "bge-small-en-v1.5"
+    asset = root / "assets" / "bge-base-en-v1.5"
     asset_hash = asset_tree_sha256(asset)
     model_hash = file_sha256(asset / "model.safetensors")
     expected_libraries = {

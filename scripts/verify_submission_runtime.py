@@ -58,18 +58,18 @@ REQUIRED_MEMBERS = {
     "LICENSE",
     "NOTICE.txt",
     "THIRD_PARTY_LICENSES/BAAI_BGE_MIT.txt",
-    "assets/bge-small-en-v1.5/1_Pooling/config.json",
-    "assets/bge-small-en-v1.5/2_Normalize/",
-    "assets/bge-small-en-v1.5/README.md",
-    "assets/bge-small-en-v1.5/config.json",
-    "assets/bge-small-en-v1.5/config_sentence_transformers.json",
-    "assets/bge-small-en-v1.5/model.safetensors",
-    "assets/bge-small-en-v1.5/modules.json",
-    "assets/bge-small-en-v1.5/sentence_bert_config.json",
-    "assets/bge-small-en-v1.5/special_tokens_map.json",
-    "assets/bge-small-en-v1.5/tokenizer.json",
-    "assets/bge-small-en-v1.5/tokenizer_config.json",
-    "assets/bge-small-en-v1.5/vocab.txt",
+    "assets/bge-base-en-v1.5/1_Pooling/config.json",
+    "assets/bge-base-en-v1.5/2_Normalize/",
+    "assets/bge-base-en-v1.5/README.md",
+    "assets/bge-base-en-v1.5/config.json",
+    "assets/bge-base-en-v1.5/config_sentence_transformers.json",
+    "assets/bge-base-en-v1.5/model.safetensors",
+    "assets/bge-base-en-v1.5/modules.json",
+    "assets/bge-base-en-v1.5/sentence_bert_config.json",
+    "assets/bge-base-en-v1.5/special_tokens_map.json",
+    "assets/bge-base-en-v1.5/tokenizer.json",
+    "assets/bge-base-en-v1.5/tokenizer_config.json",
+    "assets/bge-base-en-v1.5/vocab.txt",
 }
 PROHIBITED_MEMBER_PARTS = {"__pycache__", ".cache", ".git", ".pytest_cache"}
 PROHIBITED_SECRET_NAMES = {
@@ -458,7 +458,7 @@ def audit_submission_metadata(extraction_root: str | Path) -> dict[str, object]:
     root = Path(extraction_root).resolve()
     metadata_path = root / "submission_metadata.json"
     model_path = root / "model/model.joblib"
-    asset_root = root / "assets/bge-small-en-v1.5"
+    asset_root = root / "assets/bge-base-en-v1.5"
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -688,7 +688,7 @@ root = Path.cwd().resolve()
 predictions = predict_test_directory(
     data_dir=root / "data",
     artifact_path=root / "model" / "model.joblib",
-    bge_asset_path=root / "assets" / "bge-small-en-v1.5",
+    bge_asset_path=root / "assets" / "bge-base-en-v1.5",
     runtime_batch_size=int(os.environ["TRACE_ACE_VERIFY_BATCH_SIZE"]),
 )
 predictions.to_csv(Path(os.environ["TRACE_ACE_VERIFY_OUTPUT"]), index=False)
@@ -904,7 +904,7 @@ def verify_submission(
                 extraction_root
             )
             expected_model = extraction_root / "model/model.joblib"
-            expected_assets = extraction_root / "assets/bge-small-en-v1.5"
+            expected_assets = extraction_root / "assets/bge-base-en-v1.5"
             if not expected_model.is_file() or not expected_assets.is_dir():
                 raise VerificationError("packaged_runtime_asset_missing", "provenance")
             report["packaged_inputs"] = {

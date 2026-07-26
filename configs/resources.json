@@ -12,5 +12,23 @@
     "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
     "usage": "local embeddings and packaged offline inference"
   },
+  "bge_base_en_v1_5": {
+    "repository": "BAAI/bge-base-en-v1.5",
+    "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+    "license": "MIT",
+    "model_safetensors_sha256": "c7c1988aae201f80cf91a5dbbd5866409503b89dcaba877ca6dba7dd0a5167d7",
+    "asset_tree_sha256": "7d71dbccbc445e0cba0a72b52ff94f258efa8e0ba07880235600a69b233c83b4",
+    "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
+    "usage": "local embeddings and packaged offline inference"
+  },
+  "bge_large_en_v1_5": {
+    "repository": "BAAI/bge-large-en-v1.5",
+    "revision": "d4aa6901d3a41ba39fb536a557fa166f842b0e09",
+    "license": "MIT",
+    "model_safetensors_sha256": "45e1954914e29bd74080e6c1510165274ff5279421c89f76c418878732f64ae7",
+    "asset_tree_sha256": "97a2dfd7dbcfdb25ebf1df968aecf39f9d34b05a216a04346dd4dfefa71888cf",
+    "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
+    "usage": "local embeddings and packaged offline inference"
+  },
   "external_training_data": []
 }
