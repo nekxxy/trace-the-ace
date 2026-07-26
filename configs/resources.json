@@ -17,7 +17,7 @@
     "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
     "license": "MIT",
     "model_safetensors_sha256": "c7c1988aae201f80cf91a5dbbd5866409503b89dcaba877ca6dba7dd0a5167d7",
-    "asset_tree_sha256": "7d71dbccbc445e0cba0a72b52ff94f258efa8e0ba07880235600a69b233c83b4",
+    "asset_tree_sha256": "2ddc704e451d197b9ac25763f6fa2a2cb3a761cbf0de7fb6ca75a7085fde4030",
     "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
     "usage": "local embeddings and packaged offline inference"
   },

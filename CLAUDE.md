@@ -76,7 +76,11 @@ crash) silently breaks anything that relies on `config.py`'s defaults
 matching the current-best store.
 
 **Also check the upstream HF model's `config.json` for a leaked host path**
-in `_name_or_path` (bge-large's did: `/root/.cache/torch/...`) before
+in `_name_or_path` (bge-large's did: `/root/.cache/torch/...`; **bge-base's
+does too** — a fresh download on 2026-07-26 showed
+`/root/.cache/torch/sentence_transformers/BAAI_bge-base-en/`, contradicting
+an earlier claim in this file that bge-base's was clean — don't trust that
+claim, verify it yourself on every fresh download) before
 building on top of a fresh asset download —
 `tests/test_packaging.py::test_bge_metadata_has_no_host_absolute_paths` and
 the real `audit_package_bytes` runtime check both scan for this. If you must
