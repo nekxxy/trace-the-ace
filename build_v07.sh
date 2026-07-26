@@ -45,8 +45,11 @@ from trace_ace.provenance import file_sha256
 a=file_sha256("$ZIP"); b=file_sha256("$ZIP_B")
 print(f"  ZIP A sha256: {a}")
 print(f"  ZIP B sha256: {b}")
-print("ZIP_DETERMINISTIC" if a==b else "ZIP_NONDETERMINISTIC")
 import os
 print(f"  ZIP bytes: {os.path.getsize('$ZIP')}")
+if a != b:
+    print("ZIP_NONDETERMINISTIC")
+    sys.exit(1)
+print("ZIP_DETERMINISTIC")
 PYEOF
 echo "[$(ts)] V07_PIPELINE_DONE"

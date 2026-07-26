@@ -10,6 +10,10 @@ export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=./venv/bin/python
 
+RAW=data/raw
+TRANSCRIPTS=data/raw/train_transcripts
+CACHE=data/interim/cache
+VIEWS=data/interim/response_views
 SPARSE=data/processed/sparse_store
 SEM=data/processed/semantic_store_bge_base_v06
 ASSET=assets/bge-base-en-v1.5
@@ -22,8 +26,14 @@ STG=submissions/staging/cleanroom_v06
 STG_B=submissions/staging/cleanroom_v06_dbl
 
 ts(){ date -u +%H:%M:%S; }
+echo "[$(ts)] STAGE0a: build response/session cache from data/raw"
+$PY scripts/build_cache.py --raw-dir "$RAW" --output-dir "$CACHE"
+echo "[$(ts)] STAGE0b: build per-response text/dense feature views"
+$PY scripts/build_response_views.py --cache-dir "$CACHE" --transcripts-dir "$TRANSCRIPTS" --output-dir "$VIEWS"
+echo "[$(ts)] STAGE0c: build disk-backed sparse store"
+$PY scripts/build_sparse_store.py --source "$VIEWS/response_views.parquet" --output-dir "$SPARSE"
 echo "[$(ts)] STAGE1: build bge-base semantic store (re-embed, ~2-4h expected)"
-$PY scripts/build_semantic_store.py --asset "$ASSET" --output-dir "$SEM" --encode-batch-size 8 --force
+$PY scripts/build_semantic_store.py --source "$VIEWS/response_views.parquet" --asset "$ASSET" --output-dir "$SEM" --encode-batch-size 8 --force
 
 echo "[$(ts)] STAGE2: sparse CV (objective-disjoint)"
 $PY scripts/run_sparse_cv.py --store-dir "$SPARSE" --run-dir "$RUN"
@@ -46,9 +56,12 @@ from trace_ace.provenance import file_sha256
 a=file_sha256("$ZIP"); b=file_sha256("$ZIP_B")
 print(f"  ZIP A sha256: {a}")
 print(f"  ZIP B sha256: {b}")
-print("ZIP_DETERMINISTIC" if a==b else "ZIP_NONDETERMINISTIC")
 import os
 print(f"  ZIP bytes: {os.path.getsize('$ZIP')}")
+if a != b:
+    print("ZIP_NONDETERMINISTIC")
+    sys.exit(1)
+print("ZIP_DETERMINISTIC")
 PYEOF
 echo "[$(ts)] STAGE8: verify submission runtime"
 $PY scripts/verify_submission_runtime.py --zip "$ZIP"
