@@ -3,6 +3,14 @@
 # in the same encoder family that transferred cleanly for v06 (bge-small -> bge-base).
 # Serial pipeline: store -> sparse CV -> semantic CV -> primary eval -> robust CV
 # -> train_final -> build_submission (double build). Fails closed (set -e).
+#
+# Assumes ./venv already has (none of this is done by this script - see
+# build_v06.sh for the confirmed-on-a-fresh-clone details):
+#   python3.12 -m venv venv   (the .python-version-pinned interpreter)
+#   ./venv/bin/pip install -r requirements.txt -r requirements-embeddings.txt
+#   ./venv/bin/pip install -e .   (installs trace_ace itself; every script in
+#     this pipeline except build_cache.py/audit_integrity.py assumes it's
+#     already importable rather than adding src/ onto sys.path itself)
 set -euo pipefail
 echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
 export HF_HUB_DISABLE_IMPLICIT_TOKEN=1

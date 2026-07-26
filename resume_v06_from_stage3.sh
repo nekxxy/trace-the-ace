@@ -4,6 +4,14 @@
 # already completed successfully on 2026-07-23 (see rebuild_v06.log) - skipped here.
 # Stage 3 was killed by the OOM killer at 20:33-20:34 UTC on 2026-07-23; a 4G swapfile
 # (/swapfile_v06) has since been added for headroom before retrying.
+#
+# Assumes ./venv already has (none of this is done by this script - see
+# build_v06.sh for the confirmed-on-a-fresh-clone details):
+#   python3.12 -m venv venv   (the .python-version-pinned interpreter)
+#   ./venv/bin/pip install -r requirements.txt -r requirements-embeddings.txt
+#   ./venv/bin/pip install -e .   (installs trace_ace itself; every script in
+#     this pipeline except build_cache.py/audit_integrity.py assumes it's
+#     already importable rather than adding src/ onto sys.path itself)
 set -euo pipefail
 echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
 export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
