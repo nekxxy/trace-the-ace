@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Resume v06 clean-room pipeline from Stage 3 onward.
-# Stage 1 (semantic store), Stage 1b (determinism check), and Stage 2 (sparse CV)
-# already completed successfully on 2026-07-23 (see rebuild_v06.log) - skipped here.
-# Stage 3 was killed by the OOM killer at 20:33-20:34 UTC on 2026-07-23; a 4G swapfile
-# (/swapfile_v06) has since been added for headroom before retrying.
+# Full v06 clean-room build under bge-base-en-v1.5 (768-dim), reconstructed from
+# build_v07.sh's pattern (build_v06.sh itself was never committed - confirmed
+# via git log). Serial pipeline: store -> sparse CV -> semantic CV -> primary
+# eval -> robust CV -> train_final -> build_submission (double build).
+# Fails closed (set -e).
 set -euo pipefail
 echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
 export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
-cd /opt/trace-the-ace
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=./venv/bin/python
 
+RAW=data/raw
+TRANSCRIPTS=data/raw/train_transcripts
+CACHE=data/interim/cache
+VIEWS=data/interim/response_views
+SPARSE=data/processed/sparse_store
 SEM=data/processed/semantic_store_bge_base_v06
 ASSET=assets/bge-base-en-v1.5
 RUN=experiments/runs/cleanroom_v06
@@ -19,10 +24,19 @@ ZIP=submissions/builds/trace_ace_cleanroom_v06.zip
 ZIP_B=submissions/builds/trace_ace_cleanroom_v06_dbl.zip
 STG=submissions/staging/cleanroom_v06
 STG_B=submissions/staging/cleanroom_v06_dbl
-SPARSE=data/processed/sparse_store
 
 ts(){ date -u +%H:%M:%S; }
+echo "[$(ts)] STAGE0a: build response/session cache from data/raw"
+$PY scripts/build_cache.py --raw-dir "$RAW" --output-dir "$CACHE"
+echo "[$(ts)] STAGE0b: build per-response text/dense feature views"
+$PY scripts/build_response_views.py --cache-dir "$CACHE" --transcripts-dir "$TRANSCRIPTS" --output-dir "$VIEWS"
+echo "[$(ts)] STAGE0c: build disk-backed sparse store"
+$PY scripts/build_sparse_store.py --source "$VIEWS/response_views.parquet" --output-dir "$SPARSE"
+echo "[$(ts)] STAGE1: build bge-base semantic store (re-embed, ~2-4h expected)"
+$PY scripts/build_semantic_store.py --source "$VIEWS/response_views.parquet" --asset "$ASSET" --output-dir "$SEM" --encode-batch-size 8 --force
 
+echo "[$(ts)] STAGE2: sparse CV (objective-disjoint)"
+$PY scripts/run_sparse_cv.py --store-dir "$SPARSE" --run-dir "$RUN"
 echo "[$(ts)] STAGE3: semantic CV (objective-disjoint, bge-base)"
 $PY scripts/run_semantic_cv.py --store-dir "$SEM" --run-dir "$RUN"
 echo "[$(ts)] STAGE4: primary ensemble eval"
@@ -49,4 +63,6 @@ if a != b:
     sys.exit(1)
 print("ZIP_DETERMINISTIC")
 PYEOF
+echo "[$(ts)] STAGE8: verify submission runtime"
+$PY scripts/verify_submission_runtime.py --zip "$ZIP"
 echo "[$(ts)] V06_PIPELINE_DONE"
