@@ -71,7 +71,15 @@ def response_identity_sha256(frame: pd.DataFrame) -> str:
 
 
 def asset_tree_sha256(root: str | Path) -> str:
-    """Hash every runtime asset path/content, excluding hub cache metadata."""
+    """Hash every runtime asset path/content, excluding hub cache metadata.
+
+    Also excludes ``2_Normalize`` (a zero-content sentence-transformers module
+    directory that ``build_submission.py`` adds to the *packaged* copy only,
+    after the working asset in ``assets/`` has already been hashed for
+    training/approval): including it would make this hash differ depending on
+    whether it's called on the working asset directory or an extracted
+    submission package, even though the actual model identity is unchanged.
+    """
 
     directory = Path(root).resolve()
     if not directory.is_dir():
@@ -82,6 +90,7 @@ def asset_tree_sha256(root: str | Path) -> str:
             path
             for path in directory.rglob("*")
             if ".cache" not in path.relative_to(directory).parts
+            and "2_Normalize" not in path.relative_to(directory).parts
         ),
         key=lambda path: path.relative_to(directory).as_posix(),
     )

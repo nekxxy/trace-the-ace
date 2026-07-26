@@ -429,12 +429,19 @@ def audit_package_bytes(extraction_root: str | Path) -> dict[str, object]:
 
 
 def _asset_tree_sha256(root: Path) -> str:
+    # Mirrors trace_ace.provenance.asset_tree_sha256 (this script stays
+    # self-contained rather than importing trace_ace) - including the
+    # 2_Normalize exclusion: that directory is added to the packaged copy
+    # only, after training/approval already hashed the bare working asset,
+    # so it must stay excluded here too or this never matches
+    # submission_metadata.json's recorded value.
     digest = hashlib.sha256()
     paths = sorted(
         (
             path
             for path in root.rglob("*")
             if ".cache" not in path.relative_to(root).parts
+            and "2_Normalize" not in path.relative_to(root).parts
         ),
         key=lambda path: path.relative_to(root).as_posix(),
     )

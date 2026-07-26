@@ -156,18 +156,11 @@ def main() -> int:
         ignore=shutil.ignore_patterns(".cache"),
     )
     (asset_target / "2_Normalize").mkdir(exist_ok=True)
-    # Recorded separately from asset_tree_hash (the approved-resource gate above):
-    # 2_Normalize is added to the staged copy only, after that gate already ran
-    # against the bare asset_source tree, so the packaged tree's hash legitimately
-    # differs. Recording asset_tree_hash here instead would make
-    # verify_submission_runtime.py's re-derivation from the extracted zip
-    # (which includes 2_Normalize) never match this file.
-    packaged_asset_tree_hash = asset_tree_sha256(asset_target)
     metadata = {
         "artifact_sha256": _sha256(args.artifact),
         "bge_revision": approved_bge["revision"],
         "bge_model_sha256": _sha256(asset_source / "model.safetensors"),
-        "bge_asset_tree_sha256": packaged_asset_tree_hash,
+        "bge_asset_tree_sha256": asset_tree_hash,
         "external_training_data": [],
         "runtime_commit": runtime_commit,
     }
