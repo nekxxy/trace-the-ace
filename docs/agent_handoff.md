@@ -123,8 +123,13 @@ After fixing bug 1, `tests/test_packaging.py::test_bge_metadata_has_no_host_abso
 failed: bge-large's `config.json`, **as published by BAAI on HuggingFace**,
 has `"_name_or_path": "/root/.cache/torch/sentence_transformers/BAAI_bge-large-en/"`
 baked in — a leftover from whoever originally converted/uploaded the
-checkpoint. (bge-base's equivalent file is clean:
-`"BAAI/bge-base-en-v1.5"`.) This isn't cosmetic-only: `verify_submission_runtime.py`'s
+checkpoint. (This was originally believed to be bge-base-specific — i.e.
+that bge-base's equivalent file was clean with `_name_or_path` set to
+`"BAAI/bge-base-en-v1.5"`. That claim was wrong: a fresh download of
+bge-base at its pinned revision on 2026-07-26 showed the identical leaked
+`/root/.cache/torch/sentence_transformers/BAAI_bge-base-en/` path. Verify
+`_name_or_path` on every fresh download regardless of which BGE size it is
+— don't assume either one is clean.) This isn't cosmetic-only: `verify_submission_runtime.py`'s
 `audit_package_bytes` scans every packaged file for host-path byte markers
 including `b"/root/"`, so this would very likely have blocked real runtime
 verification, not just failed a local test.
