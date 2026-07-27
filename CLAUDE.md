@@ -21,16 +21,20 @@ version-by-version scoreboard and the lessons that generalize, see
   second independently-pretrained embedder), not more transforms of the same
   cached bge embeddings. See the scoreboard and `docs/agent_handoff.md` for
   detail.
-- **v09** (H-B: `all-MiniLM-L6-v2` as an additive 4th head) was **killed by
-  the mandatory correlation kill-switch before any ensemble architecture was
-  built** — `corr(bge_base_sem_oof, minilm_sem_oof) = 0.876`, above the 0.85
-  threshold, and MiniLM-alone semantic OOF (0.59813) is worse than
-  bge-base-alone (0.59177) besides. Don't re-try this exact candidate
-  expecting a different answer. If you revisit H-B, the lesson is: a
-  *generic sentence-transformer encoder trained with a broadly similar
-  contrastive objective* isn't enough diversity on this domain — you need a
-  genuinely different embedding paradigm, not just a different architecture
-  on a similar training recipe. See `experiments/improvements/v09_hb_killswitch.md`.
+- **v09** (H-B: second embedder as an additive 4th head) tried two
+  candidates, **neither adopted, no ensemble architecture was ever built**:
+  `all-MiniLM-L6-v2` was **killed by the correlation kill-switch**
+  (`corr(bge_base_sem_oof, minilm_sem_oof) = 0.876`, above the 0.85
+  threshold). Mean-pooled `distilbert-base-uncased` (no contrastive
+  fine-tuning at all) **passed** the kill-switch (`corr = 0.834`) but a
+  cheap 4-way blend-weight grid search over already-computed OOF (no new
+  architecture needed) found its optimal weight is **exactly 0** — no
+  ensemble value despite genuine diversity. Don't re-try either exact
+  candidate expecting a different answer. **The generalizable lesson: the
+  correlation kill-switch is necessary but not sufficient** — check both
+  correlation *and* optimal blend weight (via the cheap OOF grid-search
+  method, not a full architecture build) before adopting any H-B candidate.
+  See `experiments/improvements/v09_hb_killswitch.md`.
 - **v06 reproduced end-to-end from raw competition data on 2026-07-27**
   (fresh clean-room rebuild, not just a code read-through) — CV numbers
   matched the scoreboard within rounding and the final zip passed the full

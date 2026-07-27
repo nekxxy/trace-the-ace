@@ -39,5 +39,14 @@
     "upstream_license": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
     "usage": "H-B kill-switch candidate: second, independently-pretrained small embedder for a potential additive 4th ensemble head (see docs/agent_handoff.md). Killed by the correlation kill-switch, not adopted - see experiments/improvements/v09_hb_killswitch.md for the result."
   },
+  "distilbert_base_uncased": {
+    "repository": "distilbert-base-uncased",
+    "revision": "12040accade4e8a0f71eabdb258fecc2e7e948be",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "5e3f1108e3cb34ee048634875d8482665b65ac713291a7e32396fb18f6ff0063",
+    "asset_tree_sha256": "b6ed4b15c5795750893d7bc583d7b2cad41be71ac0768a85e7383fd651f55aa5",
+    "upstream_license": "https://huggingface.co/distilbert-base-uncased",
+    "usage": "H-B kill-switch candidate: mean-pooled raw DistilBERT (MLM+distillation objective only, no contrastive similarity fine-tuning), chosen to isolate training-objective diversity from architecture diversity after all-MiniLM-L6-v2's kill-switch failed. See experiments/improvements/v09_hb_killswitch.md."
+  },
   "external_training_data": []
 }
