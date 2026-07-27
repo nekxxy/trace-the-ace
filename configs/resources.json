@@ -30,5 +30,14 @@
     "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
     "usage": "local embeddings and packaged offline inference"
   },
+  "all_minilm_l6_v2": {
+    "repository": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+    "asset_tree_sha256": "b01e0a186457dcceb9704827e0a24a3621530e9dc37c870b799ae163358c4507",
+    "upstream_license": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+    "usage": "H-B kill-switch candidate: second, independently-pretrained small embedder for a potential additive 4th ensemble head (see docs/agent_handoff.md). Not yet adopted - see experiments/improvements/v08_hb_killswitch.md for the correlation-check result before building anything on top of this."
+  },
   "external_training_data": []
 }
