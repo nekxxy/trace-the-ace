@@ -991,11 +991,17 @@ def verify_submission(
             reference = batch_frames[0]["probability"].to_numpy(dtype=np.float64)
             main_values = main_frames[0]["probability"].to_numpy(dtype=np.float64)
             # CPU transformer kernels can change float32 reduction order with
-            # batch shape.  The measured clean-room variation is below 7e-8;
-            # 1e-7 is a strict numerical-invariance threshold while rejecting
-            # any submission-relevant probability change.
-            absolute_tolerance = 1e-7
-            relative_tolerance = 1e-7
+            # batch shape. The original measurement here (below 7e-8, on
+            # whatever host that was) doesn't hold across all CPUs: a 2026-07-26
+            # clean-room rebuild on a 4-core Intel Xeon measured max_abs_diff
+            # 1.836e-07 (max_rel_diff 3.04e-07) across batch sizes 1/17/128 on
+            # the real smoke fixture - every one of the 100 rows differs, but
+            # only in the 7th decimal place. 5e-7 keeps over 2.5x margin above
+            # that measurement while remaining ~4-5 orders of magnitude below
+            # any batch-size-dependent difference that would actually indicate
+            # a logic bug rather than CPU floating-point reduction-order noise.
+            absolute_tolerance = 5e-7
+            relative_tolerance = 5e-7
             all_frames = [main_values] + [
                 frame["probability"].to_numpy(dtype=np.float64) for frame in batch_frames[1:]
             ]
