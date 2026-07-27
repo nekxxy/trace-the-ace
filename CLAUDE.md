@@ -6,7 +6,7 @@ version-by-version scoreboard and the lessons that generalize, see
 `experiments/improvements/README.md` — that file is the source of truth for
 "what's the best candidate right now and why."
 
-## Where things stand (2026-07-25)
+## Where things stand (2026-07-27)
 
 - **Best real submission: v06** (bge-base semantic encoder), real public log
   loss **0.6073**, rank 20. Local OOF 0.58742.
@@ -21,6 +21,29 @@ version-by-version scoreboard and the lessons that generalize, see
   second independently-pretrained embedder), not more transforms of the same
   cached bge embeddings. See the scoreboard and `docs/agent_handoff.md` for
   detail.
+- **v09** (H-B: `all-MiniLM-L6-v2` as an additive 4th head) was **killed by
+  the mandatory correlation kill-switch before any ensemble architecture was
+  built** — `corr(bge_base_sem_oof, minilm_sem_oof) = 0.876`, above the 0.85
+  threshold, and MiniLM-alone semantic OOF (0.59813) is worse than
+  bge-base-alone (0.59177) besides. Don't re-try this exact candidate
+  expecting a different answer. If you revisit H-B, the lesson is: a
+  *generic sentence-transformer encoder trained with a broadly similar
+  contrastive objective* isn't enough diversity on this domain — you need a
+  genuinely different embedding paradigm, not just a different architecture
+  on a similar training recipe. See `experiments/improvements/v09_hb_killswitch.md`.
+- **v06 reproduced end-to-end from raw competition data on 2026-07-27**
+  (fresh clean-room rebuild, not just a code read-through) — CV numbers
+  matched the scoreboard within rounding and the final zip passed the full
+  `verify_submission_runtime.py` gate. Three real bugs were found and fixed
+  in the process, all now in the codebase: bge-base's `config.json` *also*
+  leaks a host path (not just bge-large's, contradicting what this file used
+  to say — see the encoder-swap section below), `asset_tree_sha256` didn't
+  exclude the packaging-only `2_Normalize` directory (this would have
+  crashed **real inference**, not just packaging, with `RuntimeError: BGE
+  asset tree differs from the trained artifact`), and the batch-invariance
+  tolerance in `verify_submission_runtime.py` was calibrated on different
+  hardware (widened 1e-7 → 5e-7 with the actual cross-CPU measurement
+  documented in the code).
 - **`config.py`'s BGE_REPOSITORY/REVISION/DIMENSION currently points at
   bge-base (v06), not bge-large (v07)** — it was left pointed at bge-large
   after v07 was built and had to be reverted back once v08's ablation (which
