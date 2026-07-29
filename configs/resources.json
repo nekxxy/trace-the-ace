@@ -48,5 +48,14 @@
     "upstream_license": "https://huggingface.co/distilbert-base-uncased",
     "usage": "H-B kill-switch candidate: mean-pooled raw DistilBERT (MLM+distillation objective only, no contrastive similarity fine-tuning), chosen to isolate training-objective diversity from architecture diversity after all-MiniLM-L6-v2's kill-switch failed. See experiments/improvements/v09_hb_killswitch.md."
   },
+  "nli_mpnet_base_v2": {
+    "repository": "sentence-transformers/nli-mpnet-base-v2",
+    "revision": "c2f4dd9a1dc4337c28cfbd650433f761bb304c50",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "cad5e88c1806c14e1f28458fba10472e3eb138c2096534c3b14bd5ecff94ef0f",
+    "asset_tree_sha256": "0fe56212e671cfda45b275adff0a775aed71e8f6f92484e68dbf6ab55c8b53e2",
+    "upstream_license": "https://huggingface.co/sentence-transformers/nli-mpnet-base-v2",
+    "usage": "H-B kill-switch candidate #3: pure-NLI fine-tuned encoder (entailment/contradiction/neutral, no retrieval-contrastive training), a third point in the training-objective space vs all-MiniLM-L6-v2 (retrieval-contrastive, too correlated) and distilbert-base-uncased (no fine-tuning, decorrelated but weak). Note: config.json's _name_or_path leaks a relative local path (old_models/nli-mpnet-base-v2/0_Transformer) - not yet sanitized since this is a pre-adoption kill-switch check; sanitize before any packaging if this candidate is ever adopted. See experiments/improvements/v09_hb_killswitch.md."
+  },
   "external_training_data": []
 }
