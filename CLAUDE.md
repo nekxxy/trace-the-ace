@@ -40,6 +40,12 @@ version-by-version scoreboard and the lessons that generalize, see
   *and* optimal blend weight (via the cheap OOF grid-search method, not a
   full architecture build) before adopting any H-B candidate. See
   `experiments/improvements/v09_hb_killswitch.md`.
+- **v10** (9 per-turn timing/latency dense features,
+  `src/trace_ace/timing_features.py`) was tested and **not adopted** — both
+  deltas (primary +0.00008, session-disjoint +0.00007) point the *wrong*
+  direction, tiny-magnitude noise, not even a believable real-direction
+  effect like v08's graph features were. Don't re-try this exact feature
+  set. See `experiments/improvements/v10_timing_features.md`.
 - **v06 reproduced end-to-end from raw competition data on 2026-07-27**
   (fresh clean-room rebuild, not just a code read-through) — CV numbers
   matched the scoreboard within rounding and the final zip passed the full
