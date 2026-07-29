@@ -104,3 +104,53 @@ the full architecture. A future H-B candidate should clear *both* bars:
 correlation below 0.85 **and** a nonzero optimal weight in a cheap
 OOF-blend grid search using the existing production OOF files, before any
 ensemble architecture work starts.
+
+## Third attempt (2026-07-27): pure-NLI mpnet — passes the kill-switch, still zero blend value
+
+Tried `sentence-transformers/nli-mpnet-base-v2` (Apache-2.0, mpnet-base,
+768-d) — fine-tuned **only** on SNLI+MultiNLI (entailment/contradiction/
+neutral classification), no retrieval-contrastive or STS-specific training
+at all. A third, distinct point in the training-objective space from the
+first two candidates.
+
+- NLI-mpnet-alone semantic OOF: log loss **0.60629**, AUROC 0.58324 — the
+  *weakest* of all three candidates tried (bge-base 0.59177, MiniLM 0.59813,
+  DistilBERT 0.60025, NLI-mpnet 0.60629).
+- **`corr(bge_base_sem_oof, nlimpnet_sem_oof) = 0.8108`** — the *most*
+  decorrelated of the three. **Passes the kill-switch.**
+- Same cheap 4-way blend-weight grid search as before: **every one of the
+  top 10 weight combinations assigns NLI-mpnet a weight of exactly 0.000.**
+  Best 4-way blend (0.58742) is, again, noise-floor-indistinguishable from
+  the current 3-way blend (0.58744). **Not adopted.**
+
+Note: `nli-mpnet-base-v2`'s `config.json` also leaks a path
+(`old_models/nli-mpnet-base-v2/0_Transformer` — a relative path, not the
+host-absolute pattern `audit_package_bytes` scans for) — not sanitized
+since this candidate was killed before reaching any packaging step.
+
+## Conclusion after three candidates: this specific lever (off-the-shelf pretrained encoder swapped in as a 4th head) looks structurally exhausted, not just unlucky
+
+Across three methodologically distinct candidates spanning the training-
+objective spectrum, a clear, consistent pattern emerged:
+
+| candidate | training objective | corr vs bge-base | standalone log loss | optimal blend weight |
+|---|---|---|---|---|
+| bge-base (existing) | retrieval-contrastive | — | 0.59177 | (production) |
+| all-MiniLM-L6-v2 | retrieval-contrastive (different corpus) | 0.876 (fails) | 0.59813 | n/a - killed pre-blend-check |
+| distilbert-base-uncased | none (MLM+distillation only) | 0.834 (passes) | 0.60025 | 0.000 |
+| nli-mpnet-base-v2 | NLI classification only | 0.811 (passes) | 0.60629 | 0.000 |
+
+Correlation and standalone quality move together: encoders trained further
+from bge-base's own objective decorrelate *and* get worse at this specific
+task simultaneously. That's not three independent unlucky draws — it's
+consistent with bge-base's retrieval-contrastive training being closely
+matched to the kind of relatedness that predicts this label, so moving
+away from that training recipe in *any* direction trades away standalone
+quality faster than it buys usable diversity. **Recommend not trying a
+fourth off-the-shelf pretrained encoder in this vein expecting a different
+answer** — that would be noise-mining, not principled search, given the
+pattern is now consistent across three well-chosen, distinct candidates.
+A genuinely different next step would need either a much larger/more
+capable second encoder (reintroducing the "closed lever" capacity-scaling
+caution from v07), or a feature source that isn't a pretrained text
+encoder at all (e.g. transcript timing/latency signal, unexplored so far).
