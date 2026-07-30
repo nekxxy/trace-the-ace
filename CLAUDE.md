@@ -46,6 +46,15 @@ version-by-version scoreboard and the lessons that generalize, see
   direction, tiny-magnitude noise, not even a believable real-direction
   effect like v08's graph features were. Don't re-try this exact feature
   set. See `experiments/improvements/v10_timing_features.md`.
+- **v11** settled the open question v07 left behind (was its regression
+  just under-regularization for bge-large's bigger embedding space?) with a
+  real `semantic_c` grid search `[0.01, 0.03, 0.05, 0.1, 0.2, 0.5]` on a
+  standalone encode (config.py never touched). Best C (0.05) narrows the
+  gap vs v07's original C=0.1 but **every C tested is still worse than
+  bge-base's semantic-only 0.59177** (best case 0.59589, +0.00412 worse).
+  **Regularization hypothesis refuted — encoder-rescaling is closed with
+  real evidence now, don't re-open it hoping a different C saves it.** See
+  `experiments/improvements/v11_bge_large_c_grid.md`.
 - **v06 reproduced end-to-end from raw competition data on 2026-07-27**
   (fresh clean-room rebuild, not just a code read-through) — CV numbers
   matched the scoreboard within rounding and the final zip passed the full
