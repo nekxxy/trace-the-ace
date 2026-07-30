@@ -17,7 +17,7 @@
     "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
     "license": "MIT",
     "model_safetensors_sha256": "c7c1988aae201f80cf91a5dbbd5866409503b89dcaba877ca6dba7dd0a5167d7",
-    "asset_tree_sha256": "7d71dbccbc445e0cba0a72b52ff94f258efa8e0ba07880235600a69b233c83b4",
+    "asset_tree_sha256": "2ddc704e451d197b9ac25763f6fa2a2cb3a761cbf0de7fb6ca75a7085fde4030",
     "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
     "usage": "local embeddings and packaged offline inference"
   },
@@ -29,6 +29,33 @@
     "asset_tree_sha256": "97a2dfd7dbcfdb25ebf1df968aecf39f9d34b05a216a04346dd4dfefa71888cf",
     "upstream_license": "https://github.com/FlagOpen/FlagEmbedding/blob/master/LICENSE",
     "usage": "local embeddings and packaged offline inference"
+  },
+  "all_minilm_l6_v2": {
+    "repository": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+    "asset_tree_sha256": "b01e0a186457dcceb9704827e0a24a3621530e9dc37c870b799ae163358c4507",
+    "upstream_license": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+    "usage": "H-B kill-switch candidate: second, independently-pretrained small embedder for a potential additive 4th ensemble head (see docs/agent_handoff.md). Killed by the correlation kill-switch, not adopted - see experiments/improvements/v09_hb_killswitch.md for the result."
+  },
+  "distilbert_base_uncased": {
+    "repository": "distilbert-base-uncased",
+    "revision": "12040accade4e8a0f71eabdb258fecc2e7e948be",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "5e3f1108e3cb34ee048634875d8482665b65ac713291a7e32396fb18f6ff0063",
+    "asset_tree_sha256": "b6ed4b15c5795750893d7bc583d7b2cad41be71ac0768a85e7383fd651f55aa5",
+    "upstream_license": "https://huggingface.co/distilbert-base-uncased",
+    "usage": "H-B kill-switch candidate: mean-pooled raw DistilBERT (MLM+distillation objective only, no contrastive similarity fine-tuning), chosen to isolate training-objective diversity from architecture diversity after all-MiniLM-L6-v2's kill-switch failed. See experiments/improvements/v09_hb_killswitch.md."
+  },
+  "nli_mpnet_base_v2": {
+    "repository": "sentence-transformers/nli-mpnet-base-v2",
+    "revision": "c2f4dd9a1dc4337c28cfbd650433f761bb304c50",
+    "license": "Apache-2.0",
+    "model_safetensors_sha256": "cad5e88c1806c14e1f28458fba10472e3eb138c2096534c3b14bd5ecff94ef0f",
+    "asset_tree_sha256": "0fe56212e671cfda45b275adff0a775aed71e8f6f92484e68dbf6ab55c8b53e2",
+    "upstream_license": "https://huggingface.co/sentence-transformers/nli-mpnet-base-v2",
+    "usage": "H-B kill-switch candidate #3: pure-NLI fine-tuned encoder (entailment/contradiction/neutral, no retrieval-contrastive training), a third point in the training-objective space vs all-MiniLM-L6-v2 (retrieval-contrastive, too correlated) and distilbert-base-uncased (no fine-tuning, decorrelated but weak). Note: config.json's _name_or_path leaks a relative local path (old_models/nli-mpnet-base-v2/0_Transformer) - not yet sanitized since this is a pre-adoption kill-switch check; sanitize before any packaging if this candidate is ever adopted. See experiments/improvements/v09_hb_killswitch.md."
   },
   "external_training_data": []
 }

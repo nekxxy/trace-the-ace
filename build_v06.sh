@@ -4,6 +4,17 @@
 # via git log). Serial pipeline: store -> sparse CV -> semantic CV -> primary
 # eval -> robust CV -> train_final -> build_submission (double build).
 # Fails closed (set -e).
+#
+# Assumes ./venv already has (none of this is done by this script - confirmed
+# on a fresh clone that all three are needed, not just documentation gaps):
+#   python3.12 -m venv venv   (the .python-version-pinned interpreter - a venv
+#     created with a different python3 minor version installs fine but every
+#     script below except build_cache.py fails with "No module named
+#     trace_ace" at import time, since only build_cache.py and
+#     audit_integrity.py defensively insert src/ onto sys.path themselves)
+#   ./venv/bin/pip install -r requirements.txt -r requirements-embeddings.txt
+#   ./venv/bin/pip install -e .   (installs trace_ace itself; every other
+#     script in this pipeline assumes it's already importable)
 set -euo pipefail
 echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
 export HF_HUB_DISABLE_IMPLICIT_TOKEN=1

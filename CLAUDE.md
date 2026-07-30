@@ -6,7 +6,7 @@ version-by-version scoreboard and the lessons that generalize, see
 `experiments/improvements/README.md` — that file is the source of truth for
 "what's the best candidate right now and why."
 
-## Where things stand (2026-07-25)
+## Where things stand (2026-07-27)
 
 - **Best real submission: v06** (bge-base semantic encoder), real public log
   loss **0.6073**, rank 20. Local OOF 0.58742.
@@ -21,6 +21,53 @@ version-by-version scoreboard and the lessons that generalize, see
   second independently-pretrained embedder), not more transforms of the same
   cached bge embeddings. See the scoreboard and `docs/agent_handoff.md` for
   detail.
+- **v09** (H-B: second embedder as an additive 4th head) tried three
+  candidates, **none adopted, no ensemble architecture was ever built**:
+  `all-MiniLM-L6-v2` was **killed by the correlation kill-switch**
+  (`corr(bge_base_sem_oof, minilm_sem_oof) = 0.876`, above the 0.85
+  threshold). Mean-pooled `distilbert-base-uncased` (no contrastive
+  fine-tuning at all, `corr = 0.834`) and `nli-mpnet-base-v2` (pure-NLI
+  fine-tuning, `corr = 0.811`) both **passed** the kill-switch but a cheap
+  4-way blend-weight grid search over already-computed OOF (no new
+  architecture needed) found their optimal weight is **exactly 0** in both
+  cases — no ensemble value despite genuine diversity. Across all three,
+  correlation and standalone quality moved together (more decorrelated from
+  bge-base → weaker alone), a consistent pattern, not three unlucky draws.
+  **Don't try a fourth off-the-shelf pretrained encoder in this vein
+  expecting a different answer — this specific lever looks structurally
+  exhausted.** The generalizable lesson stands regardless: the correlation
+  kill-switch is necessary but not sufficient — check both correlation
+  *and* optimal blend weight (via the cheap OOF grid-search method, not a
+  full architecture build) before adopting any H-B candidate. See
+  `experiments/improvements/v09_hb_killswitch.md`.
+- **v10** (9 per-turn timing/latency dense features,
+  `src/trace_ace/timing_features.py`) was tested and **not adopted** — both
+  deltas (primary +0.00008, session-disjoint +0.00007) point the *wrong*
+  direction, tiny-magnitude noise, not even a believable real-direction
+  effect like v08's graph features were. Don't re-try this exact feature
+  set. See `experiments/improvements/v10_timing_features.md`.
+- **v11** settled the open question v07 left behind (was its regression
+  just under-regularization for bge-large's bigger embedding space?) with a
+  real `semantic_c` grid search `[0.01, 0.03, 0.05, 0.1, 0.2, 0.5]` on a
+  standalone encode (config.py never touched). Best C (0.05) narrows the
+  gap vs v07's original C=0.1 but **every C tested is still worse than
+  bge-base's semantic-only 0.59177** (best case 0.59589, +0.00412 worse).
+  **Regularization hypothesis refuted — encoder-rescaling is closed with
+  real evidence now, don't re-open it hoping a different C saves it.** See
+  `experiments/improvements/v11_bge_large_c_grid.md`.
+- **v06 reproduced end-to-end from raw competition data on 2026-07-27**
+  (fresh clean-room rebuild, not just a code read-through) — CV numbers
+  matched the scoreboard within rounding and the final zip passed the full
+  `verify_submission_runtime.py` gate. Three real bugs were found and fixed
+  in the process, all now in the codebase: bge-base's `config.json` *also*
+  leaks a host path (not just bge-large's, contradicting what this file used
+  to say — see the encoder-swap section below), `asset_tree_sha256` didn't
+  exclude the packaging-only `2_Normalize` directory (this would have
+  crashed **real inference**, not just packaging, with `RuntimeError: BGE
+  asset tree differs from the trained artifact`), and the batch-invariance
+  tolerance in `verify_submission_runtime.py` was calibrated on different
+  hardware (widened 1e-7 → 5e-7 with the actual cross-CPU measurement
+  documented in the code).
 - **`config.py`'s BGE_REPOSITORY/REVISION/DIMENSION currently points at
   bge-base (v06), not bge-large (v07)** — it was left pointed at bge-large
   after v07 was built and had to be reverted back once v08's ablation (which
@@ -76,7 +123,11 @@ crash) silently breaks anything that relies on `config.py`'s defaults
 matching the current-best store.
 
 **Also check the upstream HF model's `config.json` for a leaked host path**
-in `_name_or_path` (bge-large's did: `/root/.cache/torch/...`) before
+in `_name_or_path` (bge-large's did: `/root/.cache/torch/...`; **bge-base's
+does too** — a fresh download on 2026-07-26 showed
+`/root/.cache/torch/sentence_transformers/BAAI_bge-base-en/`, contradicting
+an earlier claim in this file that bge-base's was clean — don't trust that
+claim, verify it yourself on every fresh download) before
 building on top of a fresh asset download —
 `tests/test_packaging.py::test_bge_metadata_has_no_host_absolute_paths` and
 the real `audit_package_bytes` runtime check both scan for this. If you must
